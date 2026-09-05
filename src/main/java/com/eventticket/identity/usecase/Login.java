@@ -2,6 +2,8 @@ package com.eventticket.identity.usecase;
 
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,8 @@ import com.eventticket.organization.domain.Organization;
 @Component
 public class Login {
 
+    private static final Logger log = LoggerFactory.getLogger(Login.class);
+
     private final AppUserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final SessionIssuer sessions;
@@ -45,9 +49,16 @@ public class Login {
                 .filter(u -> passwordEncoder.matches(password, u.passwordHash()))
                 // One message for an unknown address and for a wrong password: distinguishing
                 // them turns this endpoint into a way to enumerate registered addresses.
-                .orElseThrow(() -> new ApiException(ErrorCodes.NOT_AUTHENTICATED,
-                        "Email address or password is incorrect."));
+                .orElseThrow(() -> {
+                    // The attempted address is logged for failed sign-ins only. It is personal
+                    // data, and the trade is deliberate: without it, credential stuffing against
+                    // one account is indistinguishable from noise.
+                    log.warn("Sign-in rejected for {}", emailAddress);
+                    return new ApiException(ErrorCodes.NOT_AUTHENTICATED,
+                            "Email address or password is incorrect.");
+                });
 
+        log.info("Signed in userId={}", user.id());
         return sessions.issueFor(user, null);
     }
 }

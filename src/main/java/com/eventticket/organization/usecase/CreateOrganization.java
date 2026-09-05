@@ -7,6 +7,8 @@ import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.shared.tenancy.TenantPublisher;
 import com.eventticket.shared.UserDirectory;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.eventticket.organization.domain.Membership;
@@ -20,6 +22,8 @@ import com.eventticket.organization.repository.OrganizationRepository;
  */
 @Component
 public class CreateOrganization {
+
+    private static final Logger log = LoggerFactory.getLogger(CreateOrganization.class);
 
     private final OrganizationRepository organizations;
     private final MembershipRepository memberships;
@@ -40,6 +44,7 @@ public class CreateOrganization {
     public Organization create(String name) {
         UUID userId = TenantContext.requireUserId();
         if (!users.isVerified(userId)) {
+            log.warn("Organization creation refused: email not verified userId={}", userId);
             throw new ApiException(ErrorCodes.EMAIL_NOT_VERIFIED,
                     "Confirm your email address before creating an organization.");
         }
@@ -54,6 +59,7 @@ public class CreateOrganization {
 
         memberships.save(new Membership(organization.id(), userId, Membership.Role.OWNER));
         audit.record(organization.id(), AuditTrail.ORGANIZATION_CREATED, name);
+        log.info("Created organization organizationId={} awaiting approval", organization.id());
 
         return organization;
     }

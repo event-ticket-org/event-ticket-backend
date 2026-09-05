@@ -5,6 +5,8 @@ import com.eventticket.shared.email.EmailSender;
 import com.eventticket.shared.error.ErrorCodes;
 import java.time.Duration;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -19,6 +21,8 @@ import com.eventticket.organization.domain.Membership;
 /** requirements/001 criterion 1. */
 @Component
 public class RegisterUser {
+
+    private static final Logger log = LoggerFactory.getLogger(RegisterUser.class);
 
     private static final Duration VERIFICATION_LIFETIME = Duration.ofHours(24);
 
@@ -55,8 +59,10 @@ public class RegisterUser {
             // is already attached to this row and becomes usable once the email is verified.
             existing.setPassword(displayName, passwordEncoder.encode(password));
             user = existing;
+            log.info("Invited user completed registration userId={}", user.id());
         } else {
             user = users.save(new AppUser(emailAddress, displayName, passwordEncoder.encode(password)));
+            log.info("Registered account userId={}", user.id());
         }
 
         sendVerification(user);

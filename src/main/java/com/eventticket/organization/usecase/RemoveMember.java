@@ -4,6 +4,8 @@ import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.shared.UserDirectory;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.eventticket.organization.domain.Membership;
@@ -19,6 +21,8 @@ import com.eventticket.organization.repository.MembershipRepository;
  */
 @Component
 public class RemoveMember {
+
+    private static final Logger log = LoggerFactory.getLogger(RemoveMember.class);
 
     private final MembershipRepository memberships;
     private final UserDirectory users;
@@ -43,5 +47,7 @@ public class RemoveMember {
         String removed = users.emailOf(userId);
         memberships.delete(membership);
         audit.record(organizationId, AuditTrail.MEMBER_REMOVED, removed);
+        // Scanning access ends immediately; other endpoints follow within the token lifetime.
+        log.info("Removed member userId={} role={}", userId, membership.role());
     }
 }

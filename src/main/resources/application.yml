@@ -30,6 +30,11 @@ app:
     # a checked-in secret is a development convenience and nothing more.
     jwt-secret: ${JWT_SECRET:dev-only-secret-not-for-any-deployed-environment-0123456789}
 
+logging:
+  pattern:
+    # Every line carries the request id, and the user and tenant once known.
+    level: "%5p [req=%X{requestId:-} user=%X{userId:-} org=%X{organizationId:-}]"
+
 management:
   endpoints:
     web:

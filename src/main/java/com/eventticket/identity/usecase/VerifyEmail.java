@@ -3,6 +3,8 @@ package com.eventticket.identity.usecase;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import java.time.Instant;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.eventticket.identity.domain.AppUser;
@@ -24,6 +26,8 @@ import com.eventticket.organization.domain.Membership;
 @Component
 public class VerifyEmail {
 
+    private static final Logger log = LoggerFactory.getLogger(VerifyEmail.class);
+
     private final AppUserRepository users;
     private final EmailVerificationTokenRepository tokens;
     private final SessionIssuer sessions;
@@ -40,14 +44,18 @@ public class VerifyEmail {
 
         EmailVerificationToken token = tokens.findByToken(rawToken)
                 .filter(t -> t.isUsable(now))
-                .orElseThrow(() -> new ApiException(ErrorCodes.NOT_FOUND,
-                        "That verification link has expired or has already been used."));
+                .orElseThrow(() -> {
+                    log.warn("Email verification refused: token expired, unknown or already used");
+                    return new ApiException(ErrorCodes.NOT_FOUND,
+                            "That verification link has expired or has already been used.");
+                });
 
         token.consume(now);
 
         AppUser user = users.findOrThrow(token.userId());
         user.markEmailVerified();
 
+        log.info("Verified email userId={}", user.id());
         return sessions.issueFor(user, null);
     }
 }

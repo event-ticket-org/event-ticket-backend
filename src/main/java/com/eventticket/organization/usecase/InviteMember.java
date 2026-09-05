@@ -7,6 +7,8 @@ import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.shared.UserDirectory;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,8 @@ import com.eventticket.organization.repository.OrganizationRepository;
 /** requirements/001 criteria 7 and 8. */
 @Component
 public class InviteMember {
+
+    private static final Logger log = LoggerFactory.getLogger(InviteMember.class);
 
     private final MembershipRepository memberships;
     private final OrganizationRepository organizations;
@@ -54,6 +58,7 @@ public class InviteMember {
 
         Membership membership = memberships.save(new Membership(organizationId, invitedUserId, role));
         audit.record(organizationId, AuditTrail.MEMBER_INVITED, emailAddress);
+        log.info("Invited member userId={} role={}", invitedUserId, role);
 
         notifyInvitee(emailAddress, organizations.findOrThrow(organizationId).name());
 

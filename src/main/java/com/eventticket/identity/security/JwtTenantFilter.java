@@ -1,5 +1,6 @@
 package com.eventticket.identity.security;
 
+import com.eventticket.shared.tenancy.LogContextFilter;
 import com.eventticket.shared.tenancy.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -7,6 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.UUID;
+import org.slf4j.MDC;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -31,7 +33,18 @@ public class JwtTenantFilter extends OncePerRequestFilter {
         try {
             Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
             if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
-                TenantContext.set(subjectOf(jwt), organizationOf(jwt));
+                UUID userId = subjectOf(jwt);
+                UUID organizationId = organizationOf(jwt);
+                TenantContext.set(userId, organizationId);
+
+                // Every log line from here on names who and which tenant, so use cases can
+                // log what happened without repeating identifiers in each message.
+                if (userId != null) {
+                    MDC.put(LogContextFilter.USER_ID, userId.toString());
+                }
+                if (organizationId != null) {
+                    MDC.put(LogContextFilter.ORGANIZATION_ID, organizationId.toString());
+                }
             }
             chain.doFilter(request, response);
         } finally {

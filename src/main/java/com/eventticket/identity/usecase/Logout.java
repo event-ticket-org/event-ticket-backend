@@ -2,6 +2,9 @@ package com.eventticket.identity.usecase;
 
 import com.eventticket.shared.tenancy.TenantContext;
 import java.time.Instant;
+import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.eventticket.identity.repository.RefreshTokenRepository;
@@ -14,6 +17,8 @@ import com.eventticket.identity.repository.RefreshTokenRepository;
 @Component
 public class Logout {
 
+    private static final Logger log = LoggerFactory.getLogger(Logout.class);
+
     private final RefreshTokenRepository refreshTokens;
 
     public Logout(RefreshTokenRepository refreshTokens) {
@@ -22,6 +27,8 @@ public class Logout {
 
     @Transactional
     public void logout() {
-        refreshTokens.revokeAllFor(TenantContext.requireUserId(), Instant.now());
+        UUID userId = TenantContext.requireUserId();
+        refreshTokens.revokeAllFor(userId, Instant.now());
+        log.info("Signed out, all refresh tokens revoked userId={}", userId);
     }
 }

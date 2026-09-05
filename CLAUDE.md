@@ -79,6 +79,23 @@ correct. `TenantPublisher.adopt` is the deliberate exception, for a use case tha
 identity as part of its own work (token refresh) or acts on an organization from outside it
 (platform approval). Anywhere else, the tenant should have come from the access token.
 
+## Logging
+
+Every use case that changes state logs one line at INFO; every refusal that a human might
+have to explain logs at WARN. `LogContextFilter` puts a request id into the MDC and returns
+it as `X-Request-Id`; `JwtTenantFilter` adds the user and organization once authenticated, so
+messages carry identifiers without repeating them.
+
+Logs and the audit trail answer different questions and both are needed. The `audit_entry`
+table is durable business record — who removed an owner, KB invariant 23. Logs are operations:
+why a request failed at 2am, and everything about authentication, which the audit table does
+not touch at all. **Failed sign-ins log the attempted address** — personal data, logged
+deliberately, because without it credential stuffing against one account is indistinguishable
+from noise.
+
+Name a new servlet filter for what it does, not `RequestContextFilter`: Spring Boot's WebMvc
+auto-configuration registers a bean of that name and a second one stops the app booting.
+
 ## Testing
 
 Integration tests run against real Postgres via Testcontainers. `ApiTest` drives the app over

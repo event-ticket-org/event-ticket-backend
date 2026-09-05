@@ -25,6 +25,9 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<Error> handle(ApiException e) {
+        // Refusals are logged where they are decided, with the identifiers that explain them.
+        // Here only the outcome is needed, at debug, so a request's log ends with its result.
+        log.debug("Request refused code={}", e.code());
         Error body = new Error(ErrorCode.fromValue(e.code()), e.getMessage());
         e.details().forEach(body::putDetailsItem);
         return ResponseEntity.status(statusFor(e.code())).body(body);

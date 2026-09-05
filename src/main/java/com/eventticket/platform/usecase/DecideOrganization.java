@@ -10,6 +10,8 @@ import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.shared.tenancy.TenantPublisher;
 import com.eventticket.shared.UserDirectory;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.eventticket.platform.support.PlatformAdmins;
@@ -17,6 +19,8 @@ import com.eventticket.platform.support.PlatformAdmins;
 /** requirements/001 criterion 6. Both outcomes email the Owner. */
 @Component
 public class DecideOrganization {
+
+    private static final Logger log = LoggerFactory.getLogger(DecideOrganization.class);
 
     private final OrganizationRepository organizations;
     private final MembershipRepository memberships;
@@ -54,12 +58,14 @@ public class DecideOrganization {
         if (approved) {
             Organization decided = organizations.save(applyApproval(organization));
             audit.record(organizationId, AuditTrail.ORGANIZATION_APPROVED, organization.name());
+            log.info("Approved organization organizationId={} by admin userId={}", organizationId, adminUserId);
             notifyOwners(organizationId, organization.name(), true, null);
             return decided;
         }
 
         Organization decided = organizations.save(applyRejection(organization, reason));
         audit.record(organizationId, AuditTrail.ORGANIZATION_REJECTED, organization.name());
+        log.info("Rejected organization organizationId={} by admin userId={}", organizationId, adminUserId);
         notifyOwners(organizationId, organization.name(), false, reason);
         return decided;
     }

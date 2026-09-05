@@ -6,6 +6,8 @@ import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.tenancy.TenantPublisher;
 import java.time.Instant;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.eventticket.identity.domain.AppUser;
@@ -30,6 +32,8 @@ import com.eventticket.organization.domain.Organization;
 @Component
 public class RefreshSession {
 
+    private static final Logger log = LoggerFactory.getLogger(RefreshSession.class);
+
     private final AppUserRepository users;
     private final MembershipRepository memberships;
     private final RefreshTokenRepository refreshTokens;
@@ -52,8 +56,11 @@ public class RefreshSession {
 
         RefreshTokenRecord record = refreshTokens.findByToken(rawToken)
                 .filter(t -> t.isUsable(now))
-                .orElseThrow(() -> new ApiException(ErrorCodes.NOT_AUTHENTICATED,
-                        "That session has expired. Sign in again."));
+                .orElseThrow(() -> {
+                    log.warn("Refresh rejected: token unknown, expired or already revoked");
+                    return new ApiException(ErrorCodes.NOT_AUTHENTICATED,
+                            "That session has expired. Sign in again.");
+                });
 
         record.revoke(now);
 
@@ -73,8 +80,13 @@ public class RefreshSession {
             return null;
         }
         tenant.adopt(userId, organizationId);
-        return memberships.findByOrganizationIdAndUserId(organizationId, userId)
-                .map(m -> organizationId)
-                .orElse(null);
+        boolean stillAMember = memberships.findByOrganizationIdAndUserId(organizationId, userId).isPresent();
+        if (!stillAMember) {
+            // The visible effect of ADR-0005's revocation window closing. Worth a line: it is
+            // how "why did my access disappear mid-shift?" gets answered.
+            log.info("Membership no longer held; dropping active organization userId={} organizationId={}",
+                    userId, organizationId);
+        }
+        return stillAMember ? organizationId : null;
     }
 }

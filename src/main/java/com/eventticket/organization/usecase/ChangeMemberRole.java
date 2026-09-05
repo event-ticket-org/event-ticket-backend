@@ -4,6 +4,8 @@ import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.shared.UserDirectory;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import com.eventticket.organization.domain.MemberView;
@@ -14,6 +16,8 @@ import com.eventticket.organization.repository.MembershipRepository;
 /** requirements/001 criteria 9 and 10. */
 @Component
 public class ChangeMemberRole {
+
+    private static final Logger log = LoggerFactory.getLogger(ChangeMemberRole.class);
 
     private final MembershipRepository memberships;
     private final UserDirectory users;
@@ -40,8 +44,10 @@ public class ChangeMemberRole {
             owners.requireAnotherOwnerBesides(organizationId, membership);
         }
 
+        Membership.Role previous = membership.role();
         membership.changeRole(role);
         audit.record(organizationId, AuditTrail.MEMBER_ROLE_CHANGED, users.emailOf(userId) + " -> " + role);
+        log.info("Changed member role userId={} from={} to={}", userId, previous, role);
 
         return new MemberView(membership, users.emailOf(userId), users.displayNameOf(userId));
     }
