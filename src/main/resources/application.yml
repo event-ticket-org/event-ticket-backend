@@ -29,6 +29,23 @@ app:
     # Development only. Staging and production supply this through the environment;
     # a checked-in secret is a development convenience and nothing more.
     jwt-secret: ${JWT_SECRET:dev-only-secret-not-for-any-deployed-environment-0123456789}
+  checkout:
+    # requirements/004 criterion 5. The buyer is shown this counting down.
+    hold-window: PT10M
+    expiry-sweep: PT1M
+  email:
+    retry-interval: PT1M
+  tickets:
+    # Version to secret. Every version listed is accepted at the door; only the current one is
+    # issued, which is how a key can be rotated without invalidating tickets already sold.
+    # Losing every key here makes every outstanding ticket unverifiable - a heavier failure
+    # than losing the JWT secret, which only forces people to sign in again.
+    current-key-version: 1
+    keys:
+      1: ${TICKET_CODE_KEY:dev-only-ticket-code-key-not-for-any-deployed-environment}
+  payment:
+    fake:
+      secret: ${FAKE_PAYMENT_SECRET:fake-provider-shared-secret}
 
 logging:
   pattern:

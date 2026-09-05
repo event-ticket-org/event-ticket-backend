@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import java.util.UUID;
 
 /**
@@ -21,6 +22,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "event_seat")
 public class EventSeat {
+
+    /** Mirrors the contract's {@code SeatAvailability}. */
+    public enum Availability { AVAILABLE, HELD, SOLD, NOT_FOR_SALE }
 
     @Id
     @GeneratedValue
@@ -46,6 +50,23 @@ public class EventSeat {
 
     @Column(name = "for_sale", nullable = false)
     private boolean forSale = true;
+
+    /**
+     * The Seat Hold, such as it is. Not an entity and not a table: one row per seat means a
+     * second hold has nowhere to exist, which is a stronger answer to KB invariant 5 than a
+     * constraint forbidding a second row. Written only by the SQL functions in V5.
+     *
+     * <p>Expiry needs nothing to happen. A lapsed hold is a timestamp in the past, so invariant
+     * 7 - "expiry releases the Event Seat with no trace" - is literally true.
+     */
+    @Column(name = "held_until")
+    private Instant heldUntil;
+
+    @Column(name = "held_by_order_id")
+    private UUID heldByOrderId;
+
+    @Column(name = "sold_at")
+    private Instant soldAt;
 
     protected EventSeat() {}
 
@@ -84,6 +105,30 @@ public class EventSeat {
 
     public boolean isForSale() {
         return forSale;
+    }
+
+    public UUID heldByOrderId() {
+        return heldByOrderId;
+    }
+
+    /**
+     * Everything a buyer needs to know about this seat, from this row alone.
+     *
+     * <p>No join, deliberately. The public seat map is read by anyone with a link and no tenant
+     * at all, and a Ticket is not readable without one - so if "sold" were the existence of a
+     * Ticket rather than a column here, the map would show sold seats as available to exactly
+     * the people about to try buying them.
+     */
+    public Availability availability() {
+        if (!forSale) {
+            return Availability.NOT_FOR_SALE;
+        }
+        if (soldAt != null) {
+            return Availability.SOLD;
+        }
+        return heldUntil != null && heldUntil.isAfter(Instant.now())
+                ? Availability.HELD
+                : Availability.AVAILABLE;
     }
 
     /** requirements/003 criteria 4 and 11. */

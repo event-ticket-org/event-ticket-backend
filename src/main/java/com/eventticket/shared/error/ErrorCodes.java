@@ -22,6 +22,9 @@ public final class ErrorCodes {
     public static final String EVENT_FIELD_FROZEN = "EVENT_FIELD_FROZEN";
     public static final String PUBLISH_PRECONDITION_FAILED = "PUBLISH_PRECONDITION_FAILED";
     public static final String CAPACITY_BELOW_SOLD = "CAPACITY_BELOW_SOLD";
+    public static final String SEATS_UNAVAILABLE = "SEATS_UNAVAILABLE";
+    public static final String HOLD_EXPIRED = "HOLD_EXPIRED";
+    public static final String ORDER_ALREADY_PAID = "ORDER_ALREADY_PAID";
 
     private ErrorCodes() {}
 }

@@ -3,7 +3,12 @@ package com.eventticket.support;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.TestcontainersConfiguration;
+import com.eventticket.api.model.CheckoutRequest;
 import com.eventticket.api.model.CreateOrganizationRequest;
+import com.eventticket.api.model.EventSeatMap;
+import com.eventticket.api.model.Order;
+import com.eventticket.api.model.PaymentSession;
+import com.eventticket.api.model.StartPaymentRequest;
 import com.eventticket.api.model.Event;
 import com.eventticket.api.model.EventInput;
 import com.eventticket.api.model.Me;
@@ -18,9 +23,12 @@ import com.eventticket.api.model.Organization;
 import com.eventticket.api.model.OrganizationDecisionRequest;
 import com.eventticket.api.model.SwitchOrganizationRequest;
 import com.eventticket.api.model.RegisterRequest;
+import com.eventticket.api.model.SeatAvailability;
 import com.eventticket.api.model.TokenPair;
 import com.eventticket.api.model.VerifyEmailRequest;
+import com.eventticket.payment.support.FakePaymentProvider;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +42,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -55,6 +64,7 @@ public abstract class ApiTest {
 
     @Autowired protected RecordingEmailSender email;
     @Autowired protected JdbcTemplate jdbc;
+    @Autowired protected FakePaymentProvider fakeProvider;
 
     @LocalServerPort private int port;
 
@@ -83,8 +93,9 @@ public abstract class ApiTest {
     void resetState() {
         email.clear();
         // Order matters: memberships reference both sides.
-        jdbc.execute("truncate audit_entry, event_seat, event_pricing_tier, event, venue, "
-                + "membership, refresh_token, email_verification_token, organization, "
+        jdbc.execute("truncate audit_entry, email_delivery, payment_event, payment_session, "
+                + "ticket, order_seat, ticket_order, event_seat, event_pricing_tier, event, "
+                + "venue, membership, refresh_token, email_verification_token, organization, "
                 + "app_user cascade");
     }
 
@@ -126,11 +137,29 @@ public abstract class ApiTest {
      * tests care that the Organization is approved and not who approved it.
      */
     protected void approve(Organization organization) {
-        TokenPair admin = signUp("platform-admin@example.com");
-        makePlatformAdmin("platform-admin@example.com");
         exchange(HttpMethod.POST, "/admin/organizations/" + organization.getId() + "/decision",
-                admin, new OrganizationDecisionRequest(
+                platformAdmin(), new OrganizationDecisionRequest(
                         OrganizationDecisionRequest.DecisionEnum.APPROVED), Organization.class);
+    }
+
+    /** Created on first use and signed in afterwards, so a test may approve more than once. */
+    private TokenPair platformAdmin() {
+        String address = "platform-admin@example.com";
+        ResponseEntity<Void> registered = http.postForEntity("/auth/register",
+                new RegisterRequest(address, "correct-horse-battery", "Platform Admin"), Void.class);
+
+        TokenPair session = registered.getStatusCode() == HttpStatus.CONFLICT
+                ? signIn(address)
+                : verify(address);
+        makePlatformAdmin(address);
+        return session;
+    }
+
+    private TokenPair verify(String emailAddress) {
+        String token = email.verificationTokenFor(emailAddress)
+                .orElseThrow(() -> new AssertionError("no verification email was sent to " + emailAddress));
+        return http.postForEntity("/auth/verify-email",
+                new VerifyEmailRequest(token), TokenPair.class).getBody();
     }
 
     protected void makePlatformAdmin(String emailAddress) {
@@ -154,7 +183,7 @@ public abstract class ApiTest {
                 new EventInput(title, venueId, startsAt), Event.class).getBody();
     }
 
-    protected void priceTier(TokenPair session, UUID eventId, String tierName, int amount) {
+    protected void priceTier(TokenPair session, UUID eventId, String tierName, long amount) {
         exchange(HttpMethod.PUT, "/events/" + eventId + "/pricing-tiers", session,
                 List.of(new PricingTier(tierName, new Money(amount, Money.CurrencyEnum.VND))),
                 Object.class);
@@ -170,6 +199,65 @@ public abstract class ApiTest {
                 .getBody().getMemberships().get(0);
         return new Organization(membership.getOrganizationId(), membership.getOrganizationName(),
                 OrganizationStatus.PENDING_APPROVAL);
+    }
+
+    // --- Buying, paying and tickets (requirements/004-006) ---------------------------------
+
+    protected ResponseEntity<Order> checkout(TokenPair session, UUID eventId, List<UUID> seatIds) {
+        return exchange(HttpMethod.POST, "/checkout", session,
+                new CheckoutRequest(eventId, seatIds), Order.class);
+    }
+
+    protected EventSeatMap publicSeatMap(UUID eventId) {
+        return exchange(HttpMethod.GET, "/public/events/" + eventId + "/seat-map", null, null,
+                EventSeatMap.class).getBody();
+    }
+
+    /** Seats nobody has taken yet, so a second buyer in the same test is not handed sold ones. */
+    protected List<UUID> seatIdsOf(UUID eventId, int count) {
+        List<UUID> free = publicSeatMap(eventId).getSeats().stream()
+                .filter(seat -> seat.getAvailability() == SeatAvailability.AVAILABLE)
+                .map(com.eventticket.api.model.EventSeat::getId).limit(count).toList();
+        assertThat(free).as("available seats for event " + eventId).hasSize(count);
+        return free;
+    }
+
+    protected PaymentSession startPayment(TokenPair session, UUID orderId) {
+        return exchange(HttpMethod.POST, "/orders/" + orderId + "/payment-sessions", session,
+                new StartPaymentRequest("FAKE"), PaymentSession.class).getBody();
+    }
+
+    /**
+     * Delivers a webhook the way the provider would: a raw body, signed. Tests never call
+     * ConfirmPayment directly, because the signature check and the raw-body handling are two
+     * of the things most likely to be wrong.
+     */
+    protected ResponseEntity<String> deliverWebhook(String eventId, String providerRef, String status) {
+        String body = """
+                {"eventId":"%s","providerRef":"%s","status":"%s"}""".formatted(eventId, providerRef, status);
+        return deliverWebhookRaw(body, fakeProvider.signatureFor(body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    protected ResponseEntity<String> deliverWebhookRaw(String body, String signature) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.set("X-Signature", signature);
+        return http.exchange("/webhooks/payments/fake", HttpMethod.POST,
+                new HttpEntity<>(body, headers), String.class);
+    }
+
+    /** Buys and pays for seats end to end, returning the paid Order. */
+    protected Order buyAndPay(TokenPair buyer, UUID eventId, List<UUID> seatIds) {
+        Order order = checkout(buyer, eventId, seatIds).getBody();
+        PaymentSession session = startPayment(buyer, order.getId());
+        deliverWebhook(UUID.randomUUID().toString(), providerRefOf(session), "PAID");
+        return exchange(HttpMethod.GET, "/orders/" + order.getId(), buyer, null, Order.class).getBody();
+    }
+
+    /** The provider's own handle for an attempt, which a confirmation names. */
+    protected String providerRefOf(PaymentSession session) {
+        return jdbc.queryForObject("select provider_ref from payment_session where id = ?",
+                String.class, session.getId());
     }
 
     protected <T> ResponseEntity<T> exchange(HttpMethod method, String path, TokenPair session,

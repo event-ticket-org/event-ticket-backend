@@ -13,8 +13,6 @@ import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.EventSeat;
 import com.eventticket.event.domain.EventSeatMapView;
 import com.eventticket.event.domain.PublicEventView;
-import com.eventticket.shared.error.ApiException;
-import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.venue.web.SeatMapMapper;
 import java.math.BigDecimal;
 import java.net.URI;
@@ -85,25 +83,13 @@ final class EventMapper {
     }
 
     private static com.eventticket.api.model.EventSeat toDto(EventSeat seat) {
-        // AVAILABLE or NOT_FOR_SALE is the whole vocabulary until Seat Holds and Tickets
-        // exist; HELD and SOLD arrive with requirements/004 and 006.
         return new com.eventticket.api.model.EventSeat(seat.id(), seat.label(),
                 BigDecimal.valueOf(seat.x()), BigDecimal.valueOf(seat.y()), seat.tierName(),
-                seat.isForSale() ? SeatAvailability.AVAILABLE : SeatAvailability.NOT_FOR_SALE);
+                SeatAvailability.fromValue(seat.availability().name()));
     }
 
-    /**
-     * The contract types {@code Money.amount} as an unformatted integer, so the generated model
-     * is an {@code Integer} - about 2.1 billion, which is a real ceiling in dong. Amounts are
-     * stored as {@code BIGINT}, so the narrowing happens here and says so rather than wrapping.
-     */
-    private static Money toDto(com.eventticket.shared.money.Money price) {
-        if (price.amount() > Integer.MAX_VALUE) {
-            throw new ApiException(ErrorCodes.VALIDATION_FAILED,
-                    "That price is larger than the API contract can represent.");
-        }
-        return new Money((int) price.amount(),
-                Money.CurrencyEnum.fromValue(price.currency().name()));
+    static Money toDto(com.eventticket.shared.money.Money price) {
+        return new Money(price.amount(), Money.CurrencyEnum.fromValue(price.currency().name()));
     }
 
     private static OffsetDateTime at(Instant instant) {
