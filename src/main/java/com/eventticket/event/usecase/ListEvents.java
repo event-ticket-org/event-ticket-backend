@@ -6,6 +6,7 @@ import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PricingTier;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.organization.domain.Managers;
 import com.eventticket.event.support.PageCursor;
 import com.eventticket.shared.page.Paged;
 import com.eventticket.shared.tenancy.TenantContext;
@@ -35,15 +36,21 @@ public class ListEvents {
     private final EventRepository events;
     private final PricingTierRepository tiers;
     private final VenueRepository venues;
+    private final Managers managers;
 
-    public ListEvents(EventRepository events, PricingTierRepository tiers, VenueRepository venues) {
+    public ListEvents(EventRepository events, PricingTierRepository tiers, VenueRepository venues,
+               Managers managers) {
         this.events = events;
         this.tiers = tiers;
         this.venues = venues;
+        this.managers = managers;
     }
 
     @Transactional(readOnly = true)
     public Paged<EventDetail> list(Event.Status status, int limit, String cursor) {
+        // KB invariant 3, as in GetEvent: this listing carries prices and sold counts.
+        managers.requireCallerCanManageEvents(TenantContext.requireOrganizationId());
+
         PageCursor from = PageCursor.decode(cursor, PageCursor.FIRST_DESCENDING);
 
         // No status filter means every status, rather than a null the query has to test for.

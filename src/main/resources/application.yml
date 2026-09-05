@@ -43,6 +43,12 @@ app:
     current-key-version: 1
     keys:
       1: ${TICKET_CODE_KEY:dev-only-ticket-code-key-not-for-any-deployed-environment}
+  admission:
+    # Generous on purpose: a scanner reads QR codes continuously, so a camera resting on one
+    # code fires the same scan many times a second. The door failing because somebody held
+    # their phone still would be worse than the abuse this prevents.
+    scans-per-second: 5
+    burst: 30
   payment:
     fake:
       secret: ${FAKE_PAYMENT_SECRET:fake-provider-shared-secret}

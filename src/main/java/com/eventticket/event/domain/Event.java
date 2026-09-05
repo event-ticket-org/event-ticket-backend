@@ -52,6 +52,20 @@ public class Event {
     @Column(name = "starts_at", nullable = false)
     private Instant startsAt;
 
+    /**
+     * The admission window (requirements/003 criterion 16). Null while the Event is a Draft;
+     * publishing requires both.
+     *
+     * <p>They are not a nicety. A start time cannot decide whether a door is open - people
+     * arrive before an event begins and leave after it ends - so without these the scan
+     * outcomes EVENT_NOT_OPEN and EVENT_ENDED have nothing to measure against.
+     */
+    @Column(name = "doors_open_at")
+    private Instant doorsOpenAt;
+
+    @Column(name = "ends_at")
+    private Instant endsAt;
+
     @Column(nullable = false)
     private boolean listed = true;
 
@@ -76,14 +90,18 @@ public class Event {
     protected Event() {}
 
     public Event(UUID organizationId, UUID venueId, String title, String description,
-                 String coverImageUrl, Instant startsAt, boolean listed) {
+                 String coverImageUrl, Instant startsAt, Instant doorsOpenAt, Instant endsAt,
+                 boolean listed) {
         this.organizationId = organizationId;
         this.venueId = venueId;
         this.title = title;
         this.description = description;
         this.coverImageUrl = coverImageUrl;
         this.startsAt = startsAt;
+        this.doorsOpenAt = doorsOpenAt;
+        this.endsAt = endsAt;
         this.listed = listed;
+        requireWindowOrdered();
     }
 
     public UUID id() {
@@ -112,6 +130,24 @@ public class Event {
 
     public Instant startsAt() {
         return startsAt;
+    }
+
+    public Instant doorsOpenAt() {
+        return doorsOpenAt;
+    }
+
+    public Instant endsAt() {
+        return endsAt;
+    }
+
+    /** requirements/007 criterion 4. Before this, nobody is getting in yet. */
+    public boolean doorsAreOpen(Instant at) {
+        return doorsOpenAt != null && !at.isBefore(doorsOpenAt);
+    }
+
+    /** ...and after this, nobody is getting in at all. */
+    public boolean hasEnded(Instant at) {
+        return endsAt != null && at.isAfter(endsAt);
     }
 
     public boolean isListed() {
@@ -163,12 +199,33 @@ public class Event {
     }
 
     /**
-     * requirements/003 criterion 9. Permitted after publish, and the reason the caller is
+     * requirements/003 criteria 9 and 16. Permitted after publish, and the reason the caller is
      * told how many people the change will email: moving an event is not a typo fix.
+     *
+     * <p>All three instants move together, and are checked once afterwards. Setting them one at
+     * a time would refuse every honest reschedule - a start time pushed to next week is past an
+     * end time that has not been moved yet, and the intermediate state is not one anybody asked
+     * for.
      */
-    public void moveTo(Instant startsAt) {
+    public void reschedule(Instant startsAt, Instant doorsOpenAt, Instant endsAt) {
         requireStillEditable();
         this.startsAt = startsAt;
+        this.doorsOpenAt = doorsOpenAt;
+        this.endsAt = endsAt;
+        requireWindowOrdered();
+    }
+
+    /**
+     * A publish precondition, checked with the other four so that a manager is told which one
+     * failed rather than that publishing failed.
+     */
+    public void requireAdmissionWindow() {
+        if (doorsOpenAt == null || endsAt == null) {
+            throw new ApiException(ErrorCodes.PUBLISH_PRECONDITION_FAILED,
+                    "Set when doors open and when the event ends before publishing. "
+                            + "The door needs them to tell someone who is early from someone "
+                            + "who is late.");
+        }
     }
 
     /** requirements/003 criterion 14. Unlisting hides an Event from the public listing only. */
@@ -215,6 +272,22 @@ public class Event {
      * may still have its title, description, images, listing and start time changed
      * (requirements/003 criteria 8 and 9).
      */
+    /**
+     * Checked whenever any of the three instants moves, not only when the window is set: moving
+     * a published Event's start time past its own end is the easy way to make a door refuse
+     * everybody.
+     */
+    private void requireWindowOrdered() {
+        if (doorsOpenAt == null || endsAt == null) {
+            return;
+        }
+        if (doorsOpenAt.isAfter(startsAt) || !endsAt.isAfter(startsAt)) {
+            throw new ApiException(ErrorCodes.VALIDATION_FAILED,
+                    "Doors must open no later than the event starts, and it must end after it "
+                            + "starts.");
+        }
+    }
+
     private void requireStillEditable() {
         if (status == Status.CANCELLED || status == Status.COMPLETED) {
             throw new ApiException(ErrorCodes.EVENT_FIELD_FROZEN,

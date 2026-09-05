@@ -56,7 +56,8 @@ constraint. `shared` depends on nothing. `organization` depends on `shared` only
 people through `shared`'s `UserDirectory`, so it and `identity` can never become mutually
 dependent.
 
-The arrows run one way: `venue` <- `event` <- `checkout` -> `payment`, `ticket`. When a module
+The arrows run one way: `venue` <- `event` <- `checkout` -> `payment`, `ticket`, and
+`admission` -> `ticket`, `event`, `organization`. When a module
 needs one fact about a module that already depends on it, ask the database rather than inverting
 an interface: `DELETE /venues/{id}` is refused by a trigger, not by a query into `event`
 ([ADR-0003](docs/adr/0003-seat-maps-are-documents-until-they-are-published.md)).
@@ -97,6 +98,12 @@ a `psql` session) from sailing past it, and **`SET LOCAL ROLE`** is what stops t
 user being a superuser, for whom neither of the other two applies.
 
 A new tenant-scoped table needs `organization_id`, RLS enabled **and** forced, and a policy.
+
+**Tenant isolation outranks a helpful error message.** Another Organization's Ticket is
+invisible to a door, so a scan of one comes back `UNKNOWN_CODE` rather than `WRONG_EVENT` -
+telling the other organization's staff that a code is "for a different event" would confirm who
+sold it. `WRONG_EVENT` is the same-Organization case, which is also the realistic one: a venue
+running two halls.
 
 **A buyer is not a member of the Organization they buy from**, and usually has no active
 Organization at all. So `ticket_order`, `order_seat` and `ticket` carry `buyer_user_id` and
@@ -242,6 +249,27 @@ signature is refused, with 401.
 code is that plus a MAC under a key from the environment, so a leaked database is not a set of
 working tickets (nfr.md). Log the count, not the codes — a code arrives in a scan request body,
 which makes the request log the easiest place to leak every code presented at a door.
+
+## The door
+
+Redemption is one conditional `UPDATE` whose row count is the answer - 1 admits, 0 means someone
+else got there first. The loser blocks on the row lock, re-evaluates, and reads back *when* and
+*which device*, which is the difference between telling somebody they have already been in and
+telling them their ticket was used by someone else.
+
+**There is no override** (requirements/007 criterion 7), and that is a property of the shape
+rather than a missing permission: the only way in is to win that update, and it is conditional
+on the Ticket being valid.
+
+A refusal is a **200 with a reason**, not an HTTP error. A client renders an error as "something
+went wrong", which is the one message that helps nobody at a gate with a queue. Only two things
+are errors: 403 for a caller who may not scan, 429 for a device over its limit.
+
+Rate limiting is in memory and per instance, which is a reading of nfr.md - one application
+instance, one Postgres, no high availability - not a shortcut. Keep the limit generous: a
+scanner reads continuously, so a camera resting on one code fires the same scan many times a
+second, and a door that fails because somebody held their phone still is worse than the abuse
+it prevents.
 
 ## Bulk refactors
 

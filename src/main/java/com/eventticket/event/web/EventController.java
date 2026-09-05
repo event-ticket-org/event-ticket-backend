@@ -54,6 +54,7 @@ public class EventController implements EventsApi {
         var created = createEvent.create(request.getTitle(), request.getDescription(),
                 request.getCoverImageUrl() == null ? null : request.getCoverImageUrl().toString(),
                 request.getVenueId(), request.getStartsAt().toInstant(),
+                at(request.getDoorsOpenAt()), at(request.getEndsAt()),
                 request.getListed() == null || request.getListed());
         return ResponseEntity.status(HttpStatus.CREATED).body(EventMapper.toDto(created));
     }
@@ -104,6 +105,8 @@ public class EventController implements EventsApi {
                 request.getDescription(),
                 request.getCoverImageUrl() == null ? null : request.getCoverImageUrl().toString(),
                 at(request.getStartsAt()),
+                at(request.getDoorsOpenAt()),
+                at(request.getEndsAt()),
                 request.getListed(),
                 request.getUnsellableSeatIds());
     }

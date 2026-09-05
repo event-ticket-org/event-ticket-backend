@@ -23,6 +23,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 
 /**
@@ -160,17 +161,58 @@ class EventLifecycleTest extends ApiTest {
         Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
         Event event = publishedEvent(manager, venue, "Live in Saigon");
 
+        // Rescheduling moves the whole event, window included. Moving only the start is the
+        // next test, and it is refused.
+        OffsetDateTime moved = NEXT_MONTH.plus(1, ChronoUnit.DAYS);
         EventPatch renamed = new EventPatch();
         renamed.setTitle("Live in Saigon (rescheduled)");
-        renamed.setStartsAt(NEXT_MONTH.plus(1, ChronoUnit.DAYS));
+        renamed.setStartsAt(moved);
+        renamed.setDoorsOpenAt(moved.minusHours(1));
+        renamed.setEndsAt(moved.plusHours(4));
 
         Event updated = exchange(HttpMethod.PATCH, "/events/" + event.getId(), manager,
                 renamed, Event.class).getBody();
 
         assertThat(updated.getTitle()).isEqualTo("Live in Saigon (rescheduled)");
         assertThat(updated.getStatus()).isEqualTo(EventStatus.PUBLISHED);
+        assertThat(updated.getEndsAt()).isEqualTo(moved.plusHours(4));
         // Nobody holds a ticket yet, so the honest count is zero rather than absent.
         assertThat(updated.getNotifyCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("publishing is refused without an admission window")
+    void noAdmissionWindowCannotPublish() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+
+        // Built by hand: the shared fixture sets a window, and this is the test that must not.
+        var input = new com.eventticket.api.model.EventInput("Live in Saigon", venue.getId(), NEXT_MONTH);
+        Event event = exchange(HttpMethod.POST, "/events", manager, input, Event.class).getBody();
+        priceTier(manager, event.getId(), "Standard", 250_000);
+
+        ResponseEntity<Error> refused = publish(manager, event.getId(), Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(refused.getBody().getCode()).isEqualTo(ErrorCode.PUBLISH_PRECONDITION_FAILED);
+        assertThat(refused.getBody().getMessage()).contains("doors open");
+    }
+
+    @Test
+    @DisplayName("an event cannot be moved past its own end")
+    void movingTheStartPastTheEndIsRefused() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = publishedEvent(manager, venue, "Live in Saigon");
+
+        EventPatch tooFar = new EventPatch();
+        tooFar.setStartsAt(NEXT_MONTH.plus(1, ChronoUnit.DAYS));   // the window stays put
+
+        ResponseEntity<Error> refused = exchange(HttpMethod.PATCH, "/events/" + event.getId(),
+                manager, tooFar, Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatusCode.valueOf(422));
+        assertThat(refused.getBody().getMessage()).contains("must end after it starts");
     }
 
     @Test

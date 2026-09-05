@@ -33,6 +33,8 @@ final class EventMapper {
                 EventStatus.fromValue(event.status().name()));
         dto.setDescription(event.description());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
+        dto.setDoorsOpenAt(at(event.doorsOpenAt()));
+        dto.setEndsAt(at(event.endsAt()));
         dto.setListed(event.isListed());
         dto.setPublishedAt(at(event.publishedAt()));
         dto.setPricingTiers(toDto(detail.pricing()));
@@ -49,6 +51,8 @@ final class EventMapper {
                 view.venueName(), view.city(), at(event.startsAt()), view.timezone());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setDescription(event.description());
+        dto.setDoorsOpenAt(at(event.doorsOpenAt()));
+        dto.setEndsAt(at(event.endsAt()));
         dto.setStatus(EventStatus.fromValue(event.status().name()));
         dto.setPricingTiers(toDto(view.pricing()));
         view.pricing().cheapest().ifPresent(price -> dto.setPriceFrom(toDto(price)));

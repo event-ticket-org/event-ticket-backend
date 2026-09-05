@@ -949,6 +949,16 @@ components:
         description: { type: string, maxLength: 5000 }
         venueId: { type: string, format: uuid }
         startsAt: { type: string, format: date-time }
+        doorsOpenAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            When admission begins. Optional while the Event is a Draft; publishing requires it,
+            along with `endsAt` (requirements/003 criterion 16).
+        endsAt:
+          type: [string, 'null']
+          format: date-time
+          description: When admission closes. Required to publish; must be after `startsAt`.
         coverImageUrl: { type: string, format: uri }
         listed: { type: boolean, default: true }
 
@@ -960,6 +970,8 @@ components:
         description: { type: string, maxLength: 5000 }
         coverImageUrl: { type: string, format: uri }
         startsAt: { type: string, format: date-time }
+        doorsOpenAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
         listed: { type: boolean }
         unsellableSeatIds:
           type: array
@@ -1004,6 +1016,11 @@ components:
           properties:
             description: { type: string }
             status: { $ref: '#/components/schemas/EventStatus' }
+            doorsOpenAt:
+              type: [string, 'null']
+              format: date-time
+              description: When to turn up. Rendered in the Venue's timezone, like every time here.
+            endsAt: { type: [string, 'null'], format: date-time }
             pricingTiers:
               type: array
               items: { $ref: '#/components/schemas/PricingTier' }
@@ -1100,7 +1117,11 @@ components:
 
     ScanOutcome:
       type: string
-      description: Every outcome is distinct, so the door can be told what actually happened.
+      description: |
+        Every outcome is distinct, so the door can be told what actually happened.
+
+        `EVENT_NOT_OPEN` and `EVENT_ENDED` are judged against the Event's admission window -
+        `doorsOpenAt` to `endsAt` - never against its start time.
       enum:
         - ADMITTED
         - ALREADY_REDEEMED

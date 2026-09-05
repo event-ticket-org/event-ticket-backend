@@ -46,7 +46,8 @@ public class CreateEvent {
 
     @Transactional
     public EventDetail create(String title, String description, String coverImageUrl,
-                              UUID venueId, Instant startsAt, boolean listed) {
+                              UUID venueId, Instant startsAt, Instant doorsOpenAt,
+                              Instant endsAt, boolean listed) {
         UUID organizationId = TenantContext.requireOrganizationId();
         managers.requireCallerCanManageEvents(organizationId);
 
@@ -54,8 +55,8 @@ public class CreateEvent {
                 .requireBelongsTo(organizationId)
                 .seatMap();
 
-        Event event = events.save(new Event(
-                organizationId, venueId, title, description, coverImageUrl, startsAt, listed));
+        Event event = events.save(new Event(organizationId, venueId, title, description,
+                coverImageUrl, startsAt, doorsOpenAt, endsAt, listed));
 
         List<PricingTier> created = tiers.saveAll(map.tierNames().stream()
                 .map(name -> new PricingTier(organizationId, event.id(), name))
