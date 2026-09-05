@@ -80,6 +80,7 @@ public class PublishEvent {
         SeatMapDocument map = venues.findOrThrow(event.venueId()).seatMap();
         requireSellableSeats(eventId, map);
         requireFutureStart(event);
+        requireAdmissionWindow(event);
 
         EventPricing pricing = EventPricing.of(map.tierNames(), tiers.findByEventId(eventId));
         requireEveryTierPriced(eventId, pricing);
@@ -127,6 +128,16 @@ public class PublishEvent {
             log.warn("Publish refused: eventId={} starts in the past", event.id());
             throw new ApiException(ErrorCodes.PUBLISH_PRECONDITION_FAILED,
                     "This event starts in the past. Set a future start time before publishing.");
+        }
+    }
+
+    /** Criterion 16: the door needs to know when it opens and when it closes. */
+    private static void requireAdmissionWindow(Event event) {
+        try {
+            event.requireAdmissionWindow();
+        } catch (ApiException e) {
+            log.warn("Publish refused: eventId={} has no admission window", event.id());
+            throw e;
         }
     }
 

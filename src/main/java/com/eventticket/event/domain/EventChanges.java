@@ -15,7 +15,8 @@ import java.util.UUID;
  * last held-back seat sellable again needs the contract to distinguish the two.
  */
 public record EventChanges(String title, String description, String coverImageUrl,
-                           Instant startsAt, Boolean listed, List<UUID> unsellableSeatIds) {
+                           Instant startsAt, Instant doorsOpenAt, Instant endsAt,
+                           Boolean listed, List<UUID> unsellableSeatIds) {
 
     public boolean touchesSeats() {
         return unsellableSeatIds != null && !unsellableSeatIds.isEmpty();

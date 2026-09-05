@@ -23,7 +23,10 @@ import com.eventticket.api.model.Organization;
 import com.eventticket.api.model.OrganizationDecisionRequest;
 import com.eventticket.api.model.SwitchOrganizationRequest;
 import com.eventticket.api.model.RegisterRequest;
+import com.eventticket.api.model.ScanRequest;
+import com.eventticket.api.model.ScanResult;
 import com.eventticket.api.model.SeatAvailability;
+import com.eventticket.api.model.Ticket;
 import com.eventticket.api.model.TokenPair;
 import com.eventticket.api.model.VerifyEmailRequest;
 import com.eventticket.payment.support.FakePaymentProvider;
@@ -93,7 +96,7 @@ public abstract class ApiTest {
     void resetState() {
         email.clear();
         // Order matters: memberships reference both sides.
-        jdbc.execute("truncate audit_entry, email_delivery, payment_event, payment_session, "
+        jdbc.execute("truncate audit_entry, scan, email_delivery, payment_event, payment_session, "
                 + "ticket, order_seat, ticket_order, event_seat, event_pricing_tier, event, "
                 + "venue, membership, refresh_token, email_verification_token, organization, "
                 + "app_user cascade");
@@ -178,9 +181,45 @@ public abstract class ApiTest {
         return exchange(HttpMethod.PUT, "/venues/" + venueId + "/seat-map", session, map, SeatMap.class);
     }
 
+    /**
+     * With an admission window, because publishing requires one (requirements/003 criterion 16)
+     * and almost every test that creates an Event goes on to publish it. A test about the
+     * window itself builds its own input.
+     */
     protected Event createEvent(TokenPair session, UUID venueId, String title, OffsetDateTime startsAt) {
-        return exchange(HttpMethod.POST, "/events", session,
-                new EventInput(title, venueId, startsAt), Event.class).getBody();
+        return createEvent(session, venueId, title, startsAt,
+                startsAt.minusHours(1), startsAt.plusHours(4));
+    }
+
+    protected Event createEvent(TokenPair session, UUID venueId, String title,
+                                OffsetDateTime startsAt, OffsetDateTime doorsOpenAt,
+                                OffsetDateTime endsAt) {
+        var input = new EventInput(title, venueId, startsAt);
+        input.setDoorsOpenAt(doorsOpenAt);
+        input.setEndsAt(endsAt);
+        return exchange(HttpMethod.POST, "/events", session, input, Event.class).getBody();
+    }
+
+    /** A scan, as the door makes it. */
+    protected ScanResult scan(TokenPair session, UUID eventId, String ticketCode, String deviceId) {
+        return exchange(HttpMethod.POST, "/events/" + eventId + "/scans", session,
+                new ScanRequest(ticketCode, deviceId), ScanResult.class).getBody();
+    }
+
+    protected <T> ResponseEntity<T> scanResponse(TokenPair session, UUID eventId, String ticketCode,
+                                                 String deviceId, Class<T> responseType) {
+        return exchange(HttpMethod.POST, "/events/" + eventId + "/scans", session,
+                new ScanRequest(ticketCode, deviceId), responseType);
+    }
+
+    /** The current codes for an Order's Tickets, as the buyer's ticket page shows them. */
+    protected List<String> ticketCodesOf(TokenPair buyer, UUID orderId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(buyer.getAccessToken());
+        List<Ticket> tickets = http.exchange("/orders/" + orderId + "/tickets", HttpMethod.GET,
+                new HttpEntity<>(headers),
+                new org.springframework.core.ParameterizedTypeReference<List<Ticket>>() {}).getBody();
+        return tickets.stream().map(Ticket::getTicketCode).toList();
     }
 
     protected void priceTier(TokenPair session, UUID eventId, String tierName, long amount) {

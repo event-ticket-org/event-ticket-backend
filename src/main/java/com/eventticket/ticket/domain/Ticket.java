@@ -69,6 +69,16 @@ public class Ticket {
     @Column(name = "redeemed_at")
     private Instant redeemedAt;
 
+    /**
+     * requirements/007 criterion 5. The device matters as much as the instant: together they
+     * are how staff tell "you already went in" from "somebody else used your ticket".
+     */
+    @Column(name = "redeemed_by_user_id")
+    private UUID redeemedByUserId;
+
+    @Column(name = "redeemed_device_id")
+    private String redeemedDeviceId;
+
     protected Ticket() {}
 
     public Ticket(UUID organizationId, UUID buyerUserId, UUID orderId, UUID eventId,
@@ -127,5 +137,13 @@ public class Ticket {
 
     public Instant redeemedAt() {
         return redeemedAt;
+    }
+
+    public String redeemedDeviceId() {
+        return redeemedDeviceId;
+    }
+
+    public boolean isVoid() {
+        return status == Status.VOID;
     }
 }

@@ -70,10 +70,7 @@ public class UpdateEvent {
                     changes.coverImageUrl() != null ? changes.coverImageUrl() : event.coverImageUrl());
         }
 
-        Integer notified = null;
-        if (changes.startsAt() != null && !changes.startsAt().equals(event.startsAt())) {
-            notified = moveStartTime(event, organizationId, changes);
-        }
+        Integer notified = reschedule(event, organizationId, changes);
 
         if (changes.listed() != null && changes.listed() != event.isListed()) {
             event.listPublicly(changes.listed());
@@ -93,18 +90,43 @@ public class UpdateEvent {
     }
 
     /**
-     * Criterion 9. The audit entry is written whether or not anyone had to be told, because
-     * the question it answers later is "who moved this event", not "who was emailed".
+     * Criteria 9 and 16. The start time and the admission window move in one step, because a
+     * reschedule that moved them separately would be refused halfway through - see
+     * {@code Event.reschedule}.
+     *
+     * <p>The audit entry is written whether or not anyone had to be told, because the question
+     * it answers later is "who moved this event", not "who was emailed".
+     *
+     * @return how many ticket holders were notified, or null if nothing moved
      */
-    private int moveStartTime(Event event, UUID organizationId, EventChanges changes) {
-        event.moveTo(changes.startsAt());
+    private Integer reschedule(Event event, UUID organizationId, EventChanges changes) {
+        boolean startMoved = changes.startsAt() != null && !changes.startsAt().equals(event.startsAt());
+        boolean windowMoved = changes.doorsOpenAt() != null || changes.endsAt() != null;
+        if (!startMoved && !windowMoved) {
+            return null;
+        }
+
+        event.reschedule(
+                changes.startsAt() != null ? changes.startsAt() : event.startsAt(),
+                changes.doorsOpenAt() != null ? changes.doorsOpenAt() : event.doorsOpenAt(),
+                changes.endsAt() != null ? changes.endsAt() : event.endsAt());
+
+        if (windowMoved) {
+            audit.record(organizationId, AuditTrail.EVENT_ADMISSION_WINDOW_CHANGED, event.title());
+            log.info("Changed admission window eventId={} doorsOpenAt={} endsAt={}",
+                    event.id(), event.doorsOpenAt(), event.endsAt());
+        }
+        if (!startMoved) {
+            return null;
+        }
+
         audit.record(organizationId, AuditTrail.EVENT_START_TIME_CHANGED, event.title());
 
-        // No Tickets exist yet, so this is genuinely zero rather than unimplemented. It stops
-        // being zero when requirements/006 lands, and the email goes out from here.
+        // No Tickets are notified yet. The count is a real zero rather than unimplemented, and
+        // this is where the email goes when requirements/006's holders exist to be told.
         int ticketHolders = 0;
         log.info("Moved event eventId={} startsAt={} notified={}",
-                event.id(), changes.startsAt(), ticketHolders);
+                event.id(), event.startsAt(), ticketHolders);
         return ticketHolders;
     }
 
