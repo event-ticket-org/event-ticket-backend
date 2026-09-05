@@ -5,12 +5,26 @@ services:
       POSTGRES_DB: eventticket
       POSTGRES_USER: eventticket
       POSTGRES_PASSWORD: eventticket
+      # Pinned, not left to the image.
+      #
+      # Postgres 18 moved the default data directory from /var/lib/postgresql/data to
+      # /var/lib/postgresql/18/docker, and the image declares VOLUME /var/lib/postgresql.
+      # A compose file written for 17 therefore keeps working and quietly stops persisting:
+      # the named volume below is mounted somewhere the server never writes, the real
+      # cluster lands in an anonymous volume, and `docker compose down` throws it away.
+      #
+      # Worse, that anonymous volume is re-attached on every recreate, so a cluster
+      # initialised once without these credentials keeps coming back and authentication
+      # fails with no clue as to why.
+      PGDATA: /var/lib/postgresql/data
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U eventticket"]
+      # -d as well as -U: pg_isready answers "accepting connections" for a server that has
+      # no such role and no such database, which makes a green healthcheck mean very little.
+      test: ["CMD-SHELL", "pg_isready -U eventticket -d eventticket"]
       interval: 5s
       timeout: 3s
       retries: 10
