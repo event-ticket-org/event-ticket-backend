@@ -10,7 +10,7 @@ import com.eventticket.api.model.RefreshRequest;
 import com.eventticket.api.model.Role;
 import com.eventticket.api.model.SwitchOrganizationRequest;
 import com.eventticket.api.model.TokenPair;
-import com.eventticket.shared.TenantContext;
+import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.support.ApiTest;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +24,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import com.eventticket.organization.usecase.ListMembers;
 
 /**
  * Knowledge base ADR-0004 and ADR-0005.

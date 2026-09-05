@@ -27,17 +27,32 @@ Package-by-feature, and **one class per use case** — `PublishEvent`, `CreateSe
 [ADR-0001](docs/adr/0001-use-case-classes-not-services.md); it is short and it is the thing
 to read before adding a class.
 
+Each feature is subdivided the same way, so the same file is in the same place in every
+feature:
+
 ```
-com.eventticket.organization   tenant boundary: Organizations, Memberships, Roles
-              .venue           Venues and reusable Seat Maps
-              .event           Events, Pricing Tiers, publish
-              .checkout        Seat Holds and Orders
-              .payment         Payment Sessions and providers
-              .ticket          Tickets, Ticket Codes, delivery
-              .admission       scanning and redemption
-              .platform        Organization approval
-              .shared          Money, tenant context, error mapping
+com.eventticket
+├── identity/       accounts, sessions, tokens
+│   ├── domain/         AppUser, RefreshTokenRecord, Session
+│   ├── repository/     Spring Data interfaces
+│   ├── security/       JWT issuing, filter chain, token hashing
+│   ├── support/        feature-local adapters
+│   ├── usecase/        RegisterUser, VerifyEmail, Login, RefreshSession…
+│   └── web/            AuthController
+├── organization/   Organizations, Memberships, Roles
+│   └── domain/ repository/ usecase/ web/
+├── platform/       Organization approval
+│   └── support/ usecase/ web/
+├── shared/
+│   ├── audit/          AuditTrail, AuditEntry
+│   ├── email/          EmailSender and implementations
+│   ├── error/          ApiException, the error envelope, error codes
+│   └── tenancy/        TenantContext, TenantAwareTransactionManager
+└── venue/ event/ checkout/ payment/ ticket/ admission/     (to come)
 ```
+
+`usecase/` is where the work is. `domain/` holds entities and the rules that belong on them;
+`support/` is for feature-local infrastructure and stays small or empty.
 
 ## The API contract compiles into the build
 

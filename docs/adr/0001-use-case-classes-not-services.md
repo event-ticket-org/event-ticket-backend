@@ -7,8 +7,22 @@ class per feature accumulates every operation that touches the feature until no 
 what a single operation does, and this system's correctness lives in individual operations:
 publishing freezes a seat map, holding a seat resolves a race, scanning redeems exactly once.
 
-This is not Clean Architecture. There are no ports, adapters, or domain/application/
-infrastructure layers. The only claim is that a use case is a class.
+This is not Clean Architecture. There are no ports, no adapters, and no dependency-inversion
+ceremony. The only claim is that a use case is a class.
+
+Within a feature, classes are grouped by kind:
+
+```
+organization/
+  domain/       entities and the rules that belong to them
+  repository/   Spring Data interfaces
+  usecase/      one class per thing a user can do
+  web/          the controller, and the records it maps
+  support/      feature-local infrastructure, where a feature has any
+```
+
+A flat feature package was the first attempt and did not survive contact with the code:
+`identity` reached 23 files in one directory before the feature was even finished.
 
 ## Consequences
 
@@ -30,6 +44,13 @@ code at all: row-level security owns it (knowledge base ADR-0004).
 lie. Shared behaviour is extracted downward; genuinely asynchronous work goes through an
 event. Bulk refund on event cancellation is the proving case — the knowledge base requires
 per-order status because it will partially fail, so it cannot be one transaction.
+
+**Everything crossing a sub-package is public.** Java's package-private visibility stops at
+the sub-package boundary, so use cases, entities and their members are `public` where a
+flat package would have kept them package-private. That is the price of this layout, paid
+knowingly: the compiler no longer enforces which classes may call an entity's mutators, and
+only `docs/` and review do. Keep mutators named for the domain act (`approveByPlatform`,
+`markEmailVerified`) so that an inappropriate call reads as wrong even though it compiles.
 
 **Generated API types stay at the web layer.** Use cases take and return domain types; the
 controller maps. Without this rule the generated DTOs quietly become the domain model, which

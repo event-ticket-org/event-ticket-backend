@@ -1,6 +1,6 @@
 package com.eventticket.support;
 
-import com.eventticket.shared.EmailSender;
+import com.eventticket.shared.email.EmailSender;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
