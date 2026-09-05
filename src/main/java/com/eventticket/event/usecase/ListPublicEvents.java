@@ -1,0 +1,96 @@
+package com.eventticket.event.usecase;
+
+import com.eventticket.event.domain.Event;
+import com.eventticket.event.domain.EventPricing;
+import com.eventticket.event.domain.PricingTier;
+import com.eventticket.event.domain.PublicEventView;
+import com.eventticket.event.repository.EventRepository;
+import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.support.PageCursor;
+import com.eventticket.organization.domain.Organization;
+import com.eventticket.organization.repository.OrganizationRepository;
+import com.eventticket.shared.page.Paged;
+import com.eventticket.venue.domain.Venue;
+import com.eventticket.venue.repository.VenueRepository;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * requirements/009: published, listed Events of approved Organizations that have not started,
+ * ordered by start time. No ranking, no relevance, no personalization - the order is the
+ * order, and a buyer who scrolls sees every event once.
+ *
+ * <p>This endpoint is the reason a Venue's city is a column of its own: filtering on a
+ * free-text address is not something a database can do.
+ */
+@Component
+public class ListPublicEvents {
+
+    private final EventRepository events;
+    private final PricingTierRepository tiers;
+    private final VenueRepository venues;
+    private final OrganizationRepository organizations;
+
+    public ListPublicEvents(EventRepository events, PricingTierRepository tiers,
+                     VenueRepository venues, OrganizationRepository organizations) {
+        this.events = events;
+        this.tiers = tiers;
+        this.venues = venues;
+        this.organizations = organizations;
+    }
+
+    @Transactional(readOnly = true)
+    public Paged<PublicEventView> list(String city, Instant startsAfter, Instant startsBefore,
+                                       int limit, String cursor) {
+        PageCursor from = PageCursor.decode(cursor, PageCursor.FIRST_ASCENDING);
+        PageRequest page = PageRequest.ofSize(limit + 1);
+        Instant now = Instant.now();
+        Instant after = PageCursor.orBeginning(startsAfter);
+        Instant before = PageCursor.orEndOfTime(startsBefore);
+
+        List<Event> found;
+        if (city == null || city.isBlank()) {
+            found = events.findPublicPage(now, Organization.Status.APPROVED, after, before,
+                    from.at(), from.id(), page);
+        } else {
+            List<UUID> venueIds = venues.findIdsByCity(city);
+            // An "in ()" with nothing in it is not a query worth sending, and on some engines
+            // not valid SQL either.
+            found = venueIds.isEmpty() ? List.of()
+                    : events.findPublicPageAtVenues(now, Organization.Status.APPROVED, venueIds,
+                            after, before, from.at(), from.id(), page);
+        }
+
+        boolean more = found.size() > limit;
+        List<Event> visible = more ? found.subList(0, limit) : found;
+        if (visible.isEmpty()) {
+            return Paged.lastPage(List.of());
+        }
+
+        Map<UUID, Venue> venuesById = venues
+                .findByIdIn(visible.stream().map(Event::venueId).distinct().toList())
+                .stream().collect(Collectors.toMap(Venue::id, v -> v));
+        Map<UUID, String> organizationNames = organizations
+                .findAllById(visible.stream().map(Event::organizationId).distinct().toList())
+                .stream().collect(Collectors.toMap(Organization::id, Organization::name));
+        Map<UUID, List<PricingTier>> tiersByEvent = tiers
+                .findByEventIdIn(visible.stream().map(Event::id).toList())
+                .stream().collect(Collectors.groupingBy(PricingTier::eventId));
+
+        List<PublicEventView> items = visible.stream().map(event -> {
+            Venue venue = venuesById.get(event.venueId());
+            return new PublicEventView(event, organizationNames.get(event.organizationId()),
+                    venue.name(), venue.city(), venue.timezone(),
+                    EventPricing.of(event, null, tiersByEvent.getOrDefault(event.id(), List.of())));
+        }).toList();
+
+        Event last = visible.get(visible.size() - 1);
+        return new Paged<>(items, more ? PageCursor.encode(last.startsAt(), last.id()) : null);
+    }
+}

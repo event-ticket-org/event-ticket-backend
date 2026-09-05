@@ -1,8 +1,6 @@
 package com.eventticket.shared.tenancy;
 
 import java.util.UUID;
-import com.eventticket.identity.security.JwtTenantFilter;
-import com.eventticket.organization.domain.Organization;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 

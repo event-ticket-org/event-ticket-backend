@@ -30,8 +30,8 @@ com.eventticket.<feature>
 └── support/      feature-local infrastructure, where a feature needs any
 ```
 
-`shared/` is subdivided by capability instead: `audit/`, `email/`, `error/`, `tenancy/`. The
-bar for adding to `shared` is that **every** feature needs it.
+`shared/` is subdivided by capability instead: `audit/`, `email/`, `error/`, `money/`,
+`page/`, `tenancy/`. The bar for adding to `shared` is that **every** feature needs it.
 
 A use case is a class named after the action — `PublishEvent`, `CreateSeatHold`, `ScanTicket`
 — with a method named for the domain verb. Every endpoint gets one, reads included;
@@ -43,6 +43,10 @@ repository, never sideways into a helper between use cases. Full reasoning in
 Generated API types stay in `web/`. Use cases take and return domain types and the controller
 maps between them, so the published contract never becomes the domain model.
 
+A Venue's Seat Map is a `jsonb` document; an Event's is rows, from publish onward. The reasons
+and everything that follows are in
+[ADR-0003](docs/adr/0003-seat-maps-are-documents-until-they-are-published.md).
+
 ## Module boundaries
 
 Declared in each feature's root `package-info.java` with
@@ -51,6 +55,11 @@ Declared in each feature's root `package-info.java` with
 constraint. `shared` depends on nothing. `organization` depends on `shared` only and reaches
 people through `shared`'s `UserDirectory`, so it and `identity` can never become mutually
 dependent.
+
+`event` depends on `venue`; `venue` knows nothing about Events. When a module needs one fact
+about a module that already depends on it, ask the database rather than inverting an interface:
+`DELETE /venues/{id}` is refused by a trigger, not by a query into `event`
+([ADR-0003](docs/adr/0003-seat-maps-are-documents-until-they-are-published.md)).
 
 Prefer the framework's own mechanism over a hand-built one. Modulith's annotations replaced
 six bespoke interfaces, records and adapters written to do the same job in an earlier attempt.
@@ -71,7 +80,27 @@ Three things make it real, and each one looks redundant until it is missing:
 - **`set_config(name, value, true)`** rather than the `SET LOCAL` statement, because the
   statement form takes no bind parameter and the tenant would have to be concatenated in.
 
+Each guard catches a different caller, which is why removing one looks harmless: the **policy**
+is what filters the application's role, **`FORCE`** is what stops the *schema owner* (migrations,
+a `psql` session) from sailing past it, and **`SET LOCAL ROLE`** is what stops the connection
+user being a superuser, for whom neither of the other two applies.
+
 A new tenant-scoped table needs `organization_id`, RLS enabled **and** forced, and a policy.
+
+**A published Event is public, on purpose.** The `event`, `event_seat`, `event_pricing_tier`
+and `venue` policies read "this tenant's rows, **or** whatever a published Event already shows
+the world", because requirements/003 criterion 13 gives every published Event a page anyone can
+open. So a tenancy test for these tables must use a **Draft** — counting published rows proves
+nothing, and 009's cross-organization listing depends on exactly this.
+
+Rules the knowledge base states absolutely belong in the schema. The seat map of a published
+Event is immutable (KB invariant 12), so `event_seat_frozen` and `event_frozen` refuse the
+change in `V4`, and `PublishedSeatMapIsFrozenTest` attacks them with raw SQL as the superuser.
+An application check cannot be tested that way and protects only the paths that remember it.
+
+**Insert an Event's seats before marking it published.** The freeze trigger can see this
+transaction's own flushed update, so setting `published_at` first makes the seat inserts
+refuse themselves. `PublishEvent` flushes the seats explicitly for that reason.
 
 **Unauthenticated flows cannot read tenant-scoped tables.** At login nobody is authenticated
 yet, so `current_app_user_id()` is null and the membership policy matches nothing — which is
@@ -117,12 +146,33 @@ The three things worth testing hard, per the KB's NFRs: seat-hold concurrency, r
 atomicity across simultaneous scanners, and webhook idempotency. None of them fail under
 mocked repositories.
 
+## Queries
+
+**Postgres cannot infer the type of a bare parameter in `? is null`.** A query written the
+obvious way for an optional filter —
+
+```sql
+and (:startsAfter is null or e.startsAt >= :startsAfter)
+```
+
+— fails at execution with `could not determine data type of parameter $4`, and only for the
+call that leaves it null. Express an absent filter as its widest value instead of as null: the
+edge of time for a bound or a cursor (`PageCursor.FIRST_ASCENDING`), every member of the enum
+for a status. No casts, no null tests, and the plan is better.
+
+Listings page by keyset, never by offset — an offset shifts under inserts, so a buyer scrolling
+while someone publishes sees rows twice or not at all. Fetch `limit + 1` to learn whether
+another page exists without counting the table.
+
 ## Spring Boot 4 differences that cost time
 
 - `TestRestTemplate` is gone. Use `RestTemplate` with `JdkClientHttpRequestFactory` — the
   default `HttpURLConnection` client cannot issue `PATCH`, which the contract uses.
 - `LocalServerPort` is `org.springframework.boot.test.web.server.LocalServerPort`.
 - Starters are per-feature: `spring-boot-starter-webmvc`, and matching `*-test` artifacts.
+- 422 is `HttpStatus.UNPROCESSABLE_CONTENT` now; `UNPROCESSABLE_ENTITY` is gone.
+- `DefaultUriBuilderFactory` encodes the whole template, so a query value encoded by hand is
+  encoded twice and matches nothing. Pass URI variables (`?city={city}`) and let it expand them.
 
 Other traps, both hit in this codebase:
 
@@ -130,6 +180,8 @@ Other traps, both hit in this codebase:
   interfaces only.
 - **`JwtClaimsSet.Builder.claim` rejects null.** Omit a claim rather than setting it null; an
   absent `org` claim is how "signed in, no organization chosen" is represented.
+- **A JSONB column maps with `@JdbcTypeCode(SqlTypes.JSON)`** over a record or a `List` of
+  them; Hibernate handles it through Jackson and `ddl-auto: validate` accepts it.
 
 ## Bulk refactors
 

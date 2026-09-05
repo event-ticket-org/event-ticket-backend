@@ -59,7 +59,12 @@ public class ApiExceptionHandler {
                  ErrorCodes.EMAIL_NOT_VERIFIED,
                  ErrorCodes.ORGANIZATION_NOT_APPROVED -> HttpStatus.FORBIDDEN;
             case ErrorCodes.NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case ErrorCodes.ALREADY_EXISTS, ErrorCodes.LAST_OWNER -> HttpStatus.CONFLICT;
+            case ErrorCodes.ALREADY_EXISTS,
+                 ErrorCodes.LAST_OWNER,
+                 ErrorCodes.VENUE_IN_USE,
+                 ErrorCodes.EVENT_FIELD_FROZEN,
+                 ErrorCodes.PUBLISH_PRECONDITION_FAILED,
+                 ErrorCodes.CAPACITY_BELOW_SOLD -> HttpStatus.CONFLICT;
             case ErrorCodes.RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.UNPROCESSABLE_ENTITY;
         };

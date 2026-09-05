@@ -8,7 +8,6 @@ import com.eventticket.api.model.Membership;
 import com.eventticket.api.model.Organization;
 import com.eventticket.api.model.RefreshRequest;
 import com.eventticket.api.model.Role;
-import com.eventticket.api.model.SwitchOrganizationRequest;
 import com.eventticket.api.model.TokenPair;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.support.ApiTest;
@@ -147,10 +146,5 @@ class TenantIsolationTest extends ApiTest {
         ResponseEntity<List<Membership>> response = http.exchange("/organization/members",
                 HttpMethod.GET, new HttpEntity<>(headers), new ParameterizedTypeReference<>() {});
         return response.getBody();
-    }
-
-    private TokenPair switchTo(TokenPair session, Organization organization) {
-        return exchange(HttpMethod.POST, "/auth/switch-organization", session,
-                new SwitchOrganizationRequest(organization.getId()), TokenPair.class).getBody();
     }
 }
