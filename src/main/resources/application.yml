@@ -24,6 +24,11 @@ server:
 
 app:
   base-url: http://localhost:5173
+  # The only way to become a platform admin, and the only privilege no request can grant.
+  # The endpoint it unlocks decides who may sell tickets at all, so conferring it needs
+  # access to the deployment rather than to the application. Comma-separated; an account
+  # named here is promoted when it registers, and at startup if it registered already.
+  platform-admin-emails: ${PLATFORM_ADMIN_EMAILS:}
   security:
     issuer: event-ticket
     # Development only. Staging and production supply this through the environment;

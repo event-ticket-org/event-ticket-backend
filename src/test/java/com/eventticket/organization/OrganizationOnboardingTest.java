@@ -147,9 +147,9 @@ class OrganizationOnboardingTest extends ApiTest {
         TokenPair owner = signUp("owner@example.com");
         Organization organization = createOrganization(owner, "Hanoi Live");
 
-        signUp("admin@example.com");
-        makePlatformAdmin("admin@example.com");
-        TokenPair admin = signIn("admin@example.com");
+        // Configured as an administrator, which is the only way to become one - there is
+        // deliberately no request that grants it.
+        TokenPair admin = signUp(PLATFORM_ADMIN_EMAIL);
 
         ResponseEntity<Organization> decided = exchange(HttpMethod.POST,
                 "/admin/organizations/" + organization.getId() + "/decision", admin,

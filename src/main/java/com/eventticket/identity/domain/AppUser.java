@@ -91,6 +91,14 @@ public class AppUser {
         return platformAdmin;
     }
 
+    /**
+     * Granted from configuration only (see {@code ConfiguredPlatformAdmins}); there is deliberately no
+     * request that can confer it.
+     */
+    public void promoteToPlatformAdmin() {
+        this.platformAdmin = true;
+    }
+
     public void markEmailVerified() {
         this.emailVerified = true;
     }

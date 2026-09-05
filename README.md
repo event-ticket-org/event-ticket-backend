@@ -24,6 +24,19 @@ docker compose up -d          # Postgres on 5432
 compose file written for 17 keeps working and quietly stops persisting - see the comment there
 before changing it.
 
+### Make yourself a platform administrator
+
+An Organization is created `PENDING_APPROVAL` and cannot sell anything until a platform
+administrator approves it, so on a fresh database **nothing works until one exists**.
+
+```bash
+PLATFORM_ADMIN_EMAILS=you@example.com ./mvnw spring-boot:run
+```
+
+Configuration is the only way to become one - no endpoint grants it, deliberately, because the
+endpoint it unlocks decides who may sell tickets at all. An address listed here is promoted
+when it registers, and at startup if it registered already, so either order works.
+
 ## How the code is organised
 
 Package-by-feature, and **one class per use case** — `PublishEvent`, `CreateSeatHold`,
