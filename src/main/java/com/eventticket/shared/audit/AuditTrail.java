@@ -21,6 +21,13 @@ public class AuditTrail {
     public static final String ORGANIZATION_CREATED = "ORGANIZATION_CREATED";
     public static final String ORGANIZATION_APPROVED = "ORGANIZATION_APPROVED";
     public static final String ORGANIZATION_REJECTED = "ORGANIZATION_REJECTED";
+    // requirements/003 criterion 15: publishing, price changes, start-time changes and
+    // listing changes are all auditable events in their own right.
+    public static final String EVENT_PUBLISHED = "EVENT_PUBLISHED";
+    public static final String EVENT_PRICES_CHANGED = "EVENT_PRICES_CHANGED";
+    public static final String EVENT_START_TIME_CHANGED = "EVENT_START_TIME_CHANGED";
+    public static final String EVENT_LISTING_CHANGED = "EVENT_LISTING_CHANGED";
+    public static final String EVENT_SALES_CLOSED = "EVENT_SALES_CLOSED";
 
     private final AuditEntryRepository entries;
 

@@ -180,8 +180,4 @@ class OrganizationOnboardingTest extends ApiTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     }
 
-    private TokenPair switchTo(TokenPair session, Organization organization) {
-        return exchange(HttpMethod.POST, "/auth/switch-organization", session,
-                new SwitchOrganizationRequest(organization.getId()), TokenPair.class).getBody();
-    }
 }

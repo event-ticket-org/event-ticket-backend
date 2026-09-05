@@ -4,12 +4,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.TestcontainersConfiguration;
 import com.eventticket.api.model.CreateOrganizationRequest;
+import com.eventticket.api.model.Event;
+import com.eventticket.api.model.EventInput;
+import com.eventticket.api.model.Me;
+import com.eventticket.api.model.Money;
+import com.eventticket.api.model.OrganizationStatus;
+import com.eventticket.api.model.PricingTier;
+import com.eventticket.api.model.SeatMap;
+import com.eventticket.api.model.Venue;
+import com.eventticket.api.model.VenueInput;
 import com.eventticket.api.model.LoginRequest;
 import com.eventticket.api.model.Organization;
+import com.eventticket.api.model.OrganizationDecisionRequest;
+import com.eventticket.api.model.SwitchOrganizationRequest;
 import com.eventticket.api.model.RegisterRequest;
 import com.eventticket.api.model.TokenPair;
 import com.eventticket.api.model.VerifyEmailRequest;
 import java.io.IOException;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -68,8 +83,9 @@ public abstract class ApiTest {
     void resetState() {
         email.clear();
         // Order matters: memberships reference both sides.
-        jdbc.execute("truncate audit_entry, membership, refresh_token, "
-                + "email_verification_token, organization, app_user cascade");
+        jdbc.execute("truncate audit_entry, event_seat, event_pricing_tier, event, venue, "
+                + "membership, refresh_token, email_verification_token, organization, "
+                + "app_user cascade");
     }
 
     /** Registers, follows the emailed verification link, and returns a signed-in session. */
@@ -98,17 +114,82 @@ public abstract class ApiTest {
                 new CreateOrganizationRequest(name), Organization.class).getBody();
     }
 
+    /** Signing in again is what puts the chosen Organization into the access token. */
+    protected TokenPair switchTo(TokenPair session, Organization organization) {
+        return exchange(HttpMethod.POST, "/auth/switch-organization", session,
+                new SwitchOrganizationRequest(organization.getId()), TokenPair.class).getBody();
+    }
+
+    /**
+     * Takes a new Organization through platform approval, which publishing requires
+     * (requirements/003 criterion 5). The administrator is created on demand, because most
+     * tests care that the Organization is approved and not who approved it.
+     */
+    protected void approve(Organization organization) {
+        TokenPair admin = signUp("platform-admin@example.com");
+        makePlatformAdmin("platform-admin@example.com");
+        exchange(HttpMethod.POST, "/admin/organizations/" + organization.getId() + "/decision",
+                admin, new OrganizationDecisionRequest(
+                        OrganizationDecisionRequest.DecisionEnum.APPROVED), Organization.class);
+    }
+
     protected void makePlatformAdmin(String emailAddress) {
         jdbc.update("update app_user set platform_admin = true where lower(email) = lower(?)", emailAddress);
     }
 
+    // --- Venues and events (requirements/002 and 003) --------------------------------------
+
+    protected Venue createVenue(TokenPair session, String name, String city) {
+        var input = new VenueInput(name, city, "Asia/Ho_Chi_Minh");
+        input.setAddress("14 Cach Mang Thang 8");
+        return exchange(HttpMethod.POST, "/venues", session, input, Venue.class).getBody();
+    }
+
+    protected ResponseEntity<SeatMap> putSeatMap(TokenPair session, UUID venueId, SeatMap map) {
+        return exchange(HttpMethod.PUT, "/venues/" + venueId + "/seat-map", session, map, SeatMap.class);
+    }
+
+    protected Event createEvent(TokenPair session, UUID venueId, String title, OffsetDateTime startsAt) {
+        return exchange(HttpMethod.POST, "/events", session,
+                new EventInput(title, venueId, startsAt), Event.class).getBody();
+    }
+
+    protected void priceTier(TokenPair session, UUID eventId, String tierName, int amount) {
+        exchange(HttpMethod.PUT, "/events/" + eventId + "/pricing-tiers", session,
+                List.of(new PricingTier(tierName, new Money(amount, Money.CurrencyEnum.VND))),
+                Object.class);
+    }
+
+    protected <T> ResponseEntity<T> publish(TokenPair session, UUID eventId, Class<T> responseType) {
+        return exchange(HttpMethod.POST, "/events/" + eventId + "/publish", session, null, responseType);
+    }
+
+    /** The single Organization the session's user belongs to, as the API reports it. */
+    protected Organization onlyOrganizationOf(TokenPair session) {
+        var membership = exchange(HttpMethod.GET, "/me", session, null, Me.class)
+                .getBody().getMemberships().get(0);
+        return new Organization(membership.getOrganizationId(), membership.getOrganizationName(),
+                OrganizationStatus.PENDING_APPROVAL);
+    }
+
     protected <T> ResponseEntity<T> exchange(HttpMethod method, String path, TokenPair session,
                                              Object body, Class<T> responseType) {
+        return exchange(method, path, session, body, responseType, Map.of());
+    }
+
+    /**
+     * Query values go through the URI factory as template variables. Interpolating them into
+     * the path by hand gets them encoded twice, and a city with a space in it then matches
+     * nothing.
+     */
+    protected <T> ResponseEntity<T> exchange(HttpMethod method, String path, TokenPair session,
+                                             Object body, Class<T> responseType,
+                                             Map<String, ?> uriVariables) {
         HttpHeaders headers = new HttpHeaders();
         if (session != null) {
             headers.setBearerAuth(session.getAccessToken());
         }
-        return http.exchange(path, method, new HttpEntity<>(body, headers), responseType);
+        return http.exchange(path, method, new HttpEntity<>(body, headers), responseType, uriVariables);
     }
 
     private static String nameFrom(String emailAddress) {

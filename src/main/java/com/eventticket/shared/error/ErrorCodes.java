@@ -17,6 +17,11 @@ public final class ErrorCodes {
     public static final String LAST_OWNER = "LAST_OWNER";
     public static final String ALREADY_EXISTS = "ALREADY_EXISTS";
     public static final String RATE_LIMITED = "RATE_LIMITED";
+    public static final String DUPLICATE_SEAT_LABEL = "DUPLICATE_SEAT_LABEL";
+    public static final String VENUE_IN_USE = "VENUE_IN_USE";
+    public static final String EVENT_FIELD_FROZEN = "EVENT_FIELD_FROZEN";
+    public static final String PUBLISH_PRECONDITION_FAILED = "PUBLISH_PRECONDITION_FAILED";
+    public static final String CAPACITY_BELOW_SOLD = "CAPACITY_BELOW_SOLD";
 
     private ErrorCodes() {}
 }
