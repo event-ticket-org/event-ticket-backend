@@ -16,6 +16,7 @@ import com.eventticket.identity.domain.EmailVerificationToken;
 import com.eventticket.identity.repository.AppUserRepository;
 import com.eventticket.identity.repository.EmailVerificationTokenRepository;
 import com.eventticket.identity.security.SecureTokens;
+import com.eventticket.identity.support.ConfiguredPlatformAdmins;
 import com.eventticket.organization.domain.Membership;
 
 /** requirements/001 criterion 1. */
@@ -30,15 +31,17 @@ public class RegisterUser {
     private final EmailVerificationTokenRepository verificationTokens;
     private final PasswordEncoder passwordEncoder;
     private final EmailSender email;
+    private final ConfiguredPlatformAdmins platformAdmins;
     private final String appBaseUrl;
 
     public RegisterUser(AppUserRepository users, EmailVerificationTokenRepository verificationTokens,
-                 PasswordEncoder passwordEncoder, EmailSender email,
+                 PasswordEncoder passwordEncoder, EmailSender email, ConfiguredPlatformAdmins platformAdmins,
                  @Value("${app.base-url}") String appBaseUrl) {
         this.users = users;
         this.verificationTokens = verificationTokens;
         this.passwordEncoder = passwordEncoder;
         this.email = email;
+        this.platformAdmins = platformAdmins;
         this.appBaseUrl = appBaseUrl;
     }
 
@@ -63,6 +66,13 @@ public class RegisterUser {
         } else {
             user = users.save(new AppUser(emailAddress, displayName, passwordEncoder.encode(password)));
             log.info("Registered account userId={}", user.id());
+        }
+
+        // From configuration, never from the request. Whoever is setting this system up
+        // registers like anybody else and arrives already able to approve Organizations.
+        if (platformAdmins.includes(user.email())) {
+            user.promoteToPlatformAdmin();
+            log.info("Registered account is a configured platform admin userId={}", user.id());
         }
 
         sendVerification(user);

@@ -61,9 +61,17 @@ import org.springframework.web.util.DefaultUriBuilderFactory;
  * security, the last-owner constraint, revocation at refresh - are enforced by Postgres and
  * by the security filter chain, and a test with a mocked repository would assert none of them.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        // The suite gets its administrator the way a deployment does. Writing platform_admin
+        // with SQL, as this used to, would have kept passing after the configuration that
+        // grants it was broken or removed.
+        properties = "app.platform-admin-emails=" + ApiTest.PLATFORM_ADMIN_EMAIL)
 @Import({TestcontainersConfiguration.class, RecordingEmailSender.Config.class})
 public abstract class ApiTest {
+
+    /** Configured as an administrator above, which is the only way to become one. */
+    protected static final String PLATFORM_ADMIN_EMAIL = "platform-admin@example.com";
 
     @Autowired protected RecordingEmailSender email;
     @Autowired protected JdbcTemplate jdbc;
@@ -147,15 +155,13 @@ public abstract class ApiTest {
 
     /** Created on first use and signed in afterwards, so a test may approve more than once. */
     private TokenPair platformAdmin() {
-        String address = "platform-admin@example.com";
+        String address = PLATFORM_ADMIN_EMAIL;
         ResponseEntity<Void> registered = http.postForEntity("/auth/register",
                 new RegisterRequest(address, "correct-horse-battery", "Platform Admin"), Void.class);
 
-        TokenPair session = registered.getStatusCode() == HttpStatus.CONFLICT
-                ? signIn(address)
-                : verify(address);
-        makePlatformAdmin(address);
-        return session;
+        // No SQL and no promotion step: the address is configured, so registering it is
+        // enough. That is the mechanism a deployment uses, and this is what proves it works.
+        return registered.getStatusCode() == HttpStatus.CONFLICT ? signIn(address) : verify(address);
     }
 
     private TokenPair verify(String emailAddress) {
@@ -163,10 +169,6 @@ public abstract class ApiTest {
                 .orElseThrow(() -> new AssertionError("no verification email was sent to " + emailAddress));
         return http.postForEntity("/auth/verify-email",
                 new VerifyEmailRequest(token), TokenPair.class).getBody();
-    }
-
-    protected void makePlatformAdmin(String emailAddress) {
-        jdbc.update("update app_user set platform_admin = true where lower(email) = lower(?)", emailAddress);
     }
 
     // --- Venues and events (requirements/002 and 003) --------------------------------------
