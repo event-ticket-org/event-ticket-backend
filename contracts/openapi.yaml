@@ -47,13 +47,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [email, password, displayName]
-              properties:
-                email: { type: string, format: email }
-                password: { type: string, minLength: 12 }
-                displayName: { type: string, maxLength: 100 }
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
       responses:
         '202': { description: Registered; a verification email has been sent }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -68,11 +62,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [token]
-              properties:
-                token: { type: string }
+            schema: { $ref: '#/components/schemas/VerifyEmailRequest' }
       responses:
         '200': { $ref: '#/components/responses/Tokens' }
         '410': { description: Verification token expired or already used }
@@ -86,12 +76,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [email, password]
-              properties:
-                email: { type: string, format: email }
-                password: { type: string }
+            schema: { $ref: '#/components/schemas/LoginRequest' }
       responses:
         '200': { $ref: '#/components/responses/Tokens' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -109,11 +94,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [refreshToken]
-              properties:
-                refreshToken: { type: string }
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
       responses:
         '200': { $ref: '#/components/responses/Tokens' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -134,11 +115,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [organizationId]
-              properties:
-                organizationId: { type: string, format: uuid }
+            schema: { $ref: '#/components/schemas/SwitchOrganizationRequest' }
       responses:
         '200': { $ref: '#/components/responses/Tokens' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -163,11 +140,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name: { type: string, maxLength: 200 }
+            schema: { $ref: '#/components/schemas/CreateOrganizationRequest' }
       responses:
         '201':
           description: Created, pending approval
@@ -198,12 +171,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [email, role]
-              properties:
-                email: { type: string, format: email }
-                role: { $ref: '#/components/schemas/Role' }
+            schema: { $ref: '#/components/schemas/InviteMemberRequest' }
       responses:
         '201':
           description: Invited
@@ -225,11 +193,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [role]
-              properties:
-                role: { $ref: '#/components/schemas/Role' }
+            schema: { $ref: '#/components/schemas/ChangeMemberRoleRequest' }
       responses:
         '200':
           description: Updated
@@ -264,15 +228,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Page'
-                  - type: object
-                    properties:
-                      items:
-                        type: array
-                        items: { $ref: '#/components/schemas/Organization' }
-
+              schema: { $ref: '#/components/schemas/OrganizationPage' }
   /admin/organizations/{organizationId}/decision:
     post:
       tags: [Platform admin]
@@ -286,12 +242,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [decision]
-              properties:
-                decision: { type: string, enum: [APPROVED, REJECTED] }
-                reason: { type: string, maxLength: 1000 }
+            schema: { $ref: '#/components/schemas/OrganizationDecisionRequest' }
       responses:
         '4XX': { $ref: '#/components/responses/Error4xx' }
         '200':
@@ -417,14 +368,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Page'
-                  - type: object
-                    properties:
-                      items:
-                        type: array
-                        items: { $ref: '#/components/schemas/Event' }
+              schema: { $ref: '#/components/schemas/EventPage' }
     post:
       tags: [Events]
       summary: Create an Event in Draft
@@ -562,15 +506,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Page'
-                  - type: object
-                    properties:
-                      items:
-                        type: array
-                        items: { $ref: '#/components/schemas/PublicEventSummary' }
-
+              schema: { $ref: '#/components/schemas/PublicEventPage' }
   /public/events/{eventId}:
     parameters:
       - $ref: '#/components/parameters/EventId'
@@ -617,15 +553,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [eventId, seatIds]
-              properties:
-                eventId: { type: string, format: uuid }
-                seatIds:
-                  type: array
-                  minItems: 1
-                  items: { type: string, format: uuid }
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
       responses:
         '201':
           description: Holds taken and Order created
@@ -652,15 +580,7 @@ paths:
           description: OK
           content:
             application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/Page'
-                  - type: object
-                    properties:
-                      items:
-                        type: array
-                        items: { $ref: '#/components/schemas/Order' }
-
+              schema: { $ref: '#/components/schemas/OrderPage' }
   /orders/{orderId}:
     parameters:
       - $ref: '#/components/parameters/OrderId'
@@ -697,11 +617,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [provider]
-              properties:
-                provider: { type: string, examples: [FAKE, STRIPE] }
+            schema: { $ref: '#/components/schemas/StartPaymentRequest' }
       responses:
         '201':
           description: Session created
@@ -759,7 +675,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { type: object, additionalProperties: true }
+            schema: { $ref: '#/components/schemas/WebhookPayload' }
       responses:
         '204': { description: Acknowledged }
         '401': { description: Signature verification failed }
@@ -782,12 +698,7 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [ticketCode, deviceId]
-              properties:
-                ticketCode: { type: string }
-                deviceId: { type: string, maxLength: 100 }
+            schema: { $ref: '#/components/schemas/ScanRequest' }
       responses:
         '200':
           description: |
@@ -1133,13 +1044,7 @@ components:
         total: { $ref: '#/components/schemas/Money' }
         seats:
           type: array
-          items:
-            type: object
-            properties:
-              seatId: { type: string, format: uuid }
-              label: { type: string }
-              tierName: { type: string }
-              price: { $ref: '#/components/schemas/Money' }
+          items: { $ref: '#/components/schemas/OrderSeat' }
         holdExpiresAt:
           type: [string, 'null']
           format: date-time
@@ -1215,3 +1120,120 @@ components:
             two together are how staff tell "you already went in" from "someone else used
             your ticket".
         firstRedeemedDeviceId: { type: [string, 'null'] }
+
+    WebhookPayload:
+      type: object
+      additionalProperties: true
+      description: |
+        The provider's raw payload. Deliberately unconstrained: each provider defines its
+        own shape, and the adapter for that provider is what interprets it.
+
+    OrderSeat:
+      type: object
+      properties:
+        seatId: { type: string, format: uuid }
+        label: { type: string }
+        tierName: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+    RegisterRequest:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 12 }
+        displayName: { type: string, maxLength: 100 }
+    VerifyEmailRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    SwitchOrganizationRequest:
+      type: object
+      required: [organizationId]
+      properties:
+        organizationId: { type: string, format: uuid }
+    CreateOrganizationRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 200 }
+    InviteMemberRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+    ChangeMemberRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+    OrganizationDecisionRequest:
+      type: object
+      required: [decision]
+      properties:
+        decision: { type: string, enum: [APPROVED, REJECTED] }
+        reason: { type: string, maxLength: 1000 }
+    CheckoutRequest:
+      type: object
+      required: [eventId, seatIds]
+      properties:
+        eventId: { type: string, format: uuid }
+        seatIds:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+    StartPaymentRequest:
+      type: object
+      required: [provider]
+      properties:
+        provider: { type: string, examples: [FAKE, STRIPE] }
+    ScanRequest:
+      type: object
+      required: [ticketCode, deviceId]
+      properties:
+        ticketCode: { type: string }
+        deviceId: { type: string, maxLength: 100 }
+    OrganizationPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Organization' }
+    EventPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Event' }
+    PublicEventPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/PublicEventSummary' }
+    OrderPage:
+      allOf:
+        - $ref: '#/components/schemas/Page'
+        - type: object
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/Order' }
