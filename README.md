@@ -17,8 +17,12 @@ Java 21 · Spring Boot 4.1.1 · PostgreSQL · Flyway · Testcontainers · Maven
 
 ```bash
 docker compose up -d          # Postgres on 5432
-./mvnw spring-boot:run
+./mvnw spring-boot:run        # :8080, context path /api/v1
 ```
+
+`PGDATA` is pinned in `compose.yaml`. Postgres 18 moved its default data directory, so a
+compose file written for 17 keeps working and quietly stops persisting - see the comment there
+before changing it.
 
 ## How the code is organised
 
