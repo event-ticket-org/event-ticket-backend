@@ -56,10 +56,21 @@ constraint. `shared` depends on nothing. `organization` depends on `shared` only
 people through `shared`'s `UserDirectory`, so it and `identity` can never become mutually
 dependent.
 
-`event` depends on `venue`; `venue` knows nothing about Events. When a module needs one fact
-about a module that already depends on it, ask the database rather than inverting an interface:
-`DELETE /venues/{id}` is refused by a trigger, not by a query into `event`
+The arrows run one way: `venue` <- `event` <- `checkout` -> `payment`, `ticket`. When a module
+needs one fact about a module that already depends on it, ask the database rather than inverting
+an interface: `DELETE /venues/{id}` is refused by a trigger, not by a query into `event`
 ([ADR-0003](docs/adr/0003-seat-maps-are-documents-until-they-are-published.md)).
+
+**Do not draw a boundary through a transaction.** Confirming a payment sells the seats, marks
+the Order paid and issues its Tickets at once (requirements/005 criterion 8), so `checkout` owns
+that step and depends on `payment` and `ticket` rather than being called by them. `payment` is
+the provider abstraction and nothing else; `ticket` takes the seats to issue for rather than an
+Order to read them from. Splitting the transaction across modules forces the boundary to be
+crossed in both directions, and Modulith is right to reject that.
+
+A generated API interface groups by OpenAPI **tag**, not by module, so one interface can span
+two. `CheckoutApi` covers orders and payment sessions: implement it in the module that may see
+both, rather than bending the contract to match the packages.
 
 Prefer the framework's own mechanism over a hand-built one. Modulith's annotations replaced
 six bespoke interfaces, records and adapters written to do the same job in an earlier attempt.
@@ -87,11 +98,32 @@ user being a superuser, for whom neither of the other two applies.
 
 A new tenant-scoped table needs `organization_id`, RLS enabled **and** forced, and a policy.
 
+**A buyer is not a member of the Organization they buy from**, and usually has no active
+Organization at all. So `ticket_order`, `order_seat` and `ticket` carry `buyer_user_id` and
+their policies admit either the Organization's staff or the buyer — in `WITH CHECK` too, because
+a buyer genuinely creates rows in an Organization that is not theirs.
+
+`payment_session`, `payment_event` and `email_delivery` are **not** tenant-scoped. A webhook
+arrives with no tenant and must find the session before it can know whose it is; scoping that
+table makes it a chicken and egg solvable only by punching a hole in the policies. The session
+carries `organization_id` and `buyer_user_id` so the webhook can `TenantPublisher.adopt` them
+and obey the policies from there on.
+
+**Writes a policy must refuse belong in a `SECURITY DEFINER` function, not in a wider policy.**
+A buyer holding a seat is the case: `hold_seats`, `release_seats` and `sell_seats` write
+`event_seat` on their behalf. Widening the policy instead would also let them change `for_sale`
+on any published event.
+
 **A published Event is public, on purpose.** The `event`, `event_seat`, `event_pricing_tier`
 and `venue` policies read "this tenant's rows, **or** whatever a published Event already shows
 the world", because requirements/003 criterion 13 gives every published Event a page anyone can
 open. So a tenancy test for these tables must use a **Draft** — counting published rows proves
 nothing, and 009's cross-organization listing depends on exactly this.
+
+Seat availability lives on `event_seat` — see
+[ADR-0004](docs/adr/0004-a-seat-hold-is-a-column-not-a-table.md). The public seat map is read
+with no tenant, so every input to availability has to be readable without one; that is why
+`sold_at` is a column and not a join to `ticket`.
 
 Rules the knowledge base states absolutely belong in the schema. The seat map of a published
 Event is immutable (KB invariant 12), so `event_seat_frozen` and `event_frozen` refuse the
@@ -146,6 +178,13 @@ The three things worth testing hard, per the KB's NFRs: seat-hold concurrency, r
 atomicity across simultaneous scanners, and webhook idempotency. None of them fail under
 mocked repositories.
 
+## Mixing JPA and JdbcTemplate
+
+They share the transaction and not the persistence context. `save()` only queues an INSERT, so
+a raw SQL statement in the same method cannot see the row — `BeginCheckout` needs
+`saveAndFlush` before `hold_seats`, or the hold's foreign key fails against an order the
+database has not been told about yet.
+
 ## Queries
 
 **Postgres cannot infer the type of a bare parameter in `? is null`.** A query written the
@@ -173,6 +212,10 @@ another page exists without counting the table.
 - 422 is `HttpStatus.UNPROCESSABLE_CONTENT` now; `UNPROCESSABLE_ENTITY` is gone.
 - `DefaultUriBuilderFactory` encodes the whole template, so a query value encoded by hand is
   encoded twice and matches nothing. Pass URI variables (`?city={city}`) and let it expand them.
+- **Jackson 3.** `tools.jackson.databind`, not `com.fasterxml.jackson.databind`; `JsonNode.asText()`
+  is `asString()`; its exceptions are unchecked.
+- `ContentCachingRequestWrapper` has no single-argument constructor any more — a cache limit is
+  required.
 
 Other traps, both hit in this codebase:
 
@@ -182,6 +225,23 @@ Other traps, both hit in this codebase:
   absent `org` claim is how "signed in, no organization chosen" is represented.
 - **A JSONB column maps with `@JdbcTypeCode(SqlTypes.JSON)`** over a record or a `List` of
   them; Hibernate handles it through Jackson and `ddl-auto: validate` accepts it.
+
+## Webhooks and ticket codes
+
+Verify the **raw bytes**. A body parsed and re-serialised has a different signature — key order,
+whitespace, number formatting — and the mismatch appears only against a real provider, never
+against a test that round-trips through the same library. `WebhookBodyFilter` keeps the bytes;
+the parsed argument the generated interface takes is ignored.
+
+Almost every webhook outcome is a 204. An unknown or already-settled session is acknowledged
+and ignored (requirements/005 criterion 6), because a provider that gets an error retries, and
+answering "I could not use this" with a failure turns one stale delivery into a loop. Only a bad
+signature is refused, with 401.
+
+**A Ticket Code is never logged, and never stored.** What is stored is the random lookup; the
+code is that plus a MAC under a key from the environment, so a leaked database is not a set of
+working tickets (nfr.md). Log the count, not the codes — a code arrives in a scan request body,
+which makes the request log the easiest place to leak every code presented at a door.
 
 ## Bulk refactors
 

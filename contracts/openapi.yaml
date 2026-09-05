@@ -808,10 +808,16 @@ components:
 
     Money:
       type: object
-      description: Integer amount in the currency's smallest unit. VND has no minor unit.
+      description: |
+        Integer amount in the currency's smallest unit. VND has no minor unit, so the amount
+        is the dong.
+
+        `int64` is not caution: an Order for 2,000 seats at 2,000,000 VND is 4x10^9, past the
+        range a 32-bit integer can carry, and a generator that reads an unformatted `integer`
+        as 32-bit would make a sold-out event unrepresentable.
       required: [amount, currency]
       properties:
-        amount: { type: integer, minimum: 0 }
+        amount: { type: integer, format: int64, minimum: 0 }
         currency: { type: string, enum: [VND] }
 
     Page:

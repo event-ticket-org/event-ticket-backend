@@ -64,7 +64,10 @@ public class ApiExceptionHandler {
                  ErrorCodes.VENUE_IN_USE,
                  ErrorCodes.EVENT_FIELD_FROZEN,
                  ErrorCodes.PUBLISH_PRECONDITION_FAILED,
-                 ErrorCodes.CAPACITY_BELOW_SOLD -> HttpStatus.CONFLICT;
+                 ErrorCodes.CAPACITY_BELOW_SOLD,
+                 ErrorCodes.SEATS_UNAVAILABLE,
+                 ErrorCodes.HOLD_EXPIRED,
+                 ErrorCodes.ORDER_ALREADY_PAID -> HttpStatus.CONFLICT;
             case ErrorCodes.RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.UNPROCESSABLE_ENTITY;
         };

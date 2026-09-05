@@ -28,6 +28,10 @@ public class AuditTrail {
     public static final String EVENT_START_TIME_CHANGED = "EVENT_START_TIME_CHANGED";
     public static final String EVENT_LISTING_CHANGED = "EVENT_LISTING_CHANGED";
     public static final String EVENT_SALES_CLOSED = "EVENT_SALES_CLOSED";
+    public static final String ORDER_PAID = "ORDER_PAID";
+    // requirements/005 criterion 9. Recorded rather than logged, because someone has to go
+    // and give the money back, and a log line is not a work queue.
+    public static final String ORDER_REFUND_REQUIRED = "ORDER_REFUND_REQUIRED";
 
     private final AuditEntryRepository entries;
 
