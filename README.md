@@ -46,11 +46,22 @@ com.eventticket.organization   tenant boundary: Organizations, Memberships, Role
 the server disagree, the build fails. Generated types are web-layer only and are mapped to
 domain types at the controller — never passed into a use case.
 
-## Schema
+## Schema and tenancy
 
 Flyway owns the schema; Hibernate is set to `validate` and will never create a table. Every
 domain table carries `organization_id` with row-level security enabled against it — the
 tenant boundary is enforced by Postgres, not by remembering a `WHERE` clause.
+
+Two details make that real rather than decorative, and both are easy to undo by accident:
+
+- **`FORCE ROW LEVEL SECURITY`** on each table, or the schema owner bypasses every policy.
+- **`SET LOCAL ROLE eventticket_app`** at the start of every transaction, because a superuser
+  bypasses policies even with `FORCE`. See
+  [ADR-0002](docs/adr/0002-application-runs-as-an-unprivileged-role.md).
+
+When adding a tenant-scoped table: give it `organization_id`, enable **and** force row-level
+security, and add a policy. Then write a test that counts the table with no `WHERE` clause —
+a test that goes through a repository method which already filters by tenant proves nothing.
 
 ## Tests
 
