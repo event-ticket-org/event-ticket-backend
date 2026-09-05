@@ -51,6 +51,10 @@ com.eventticket
 └── venue/ event/ checkout/ payment/ ticket/ admission/     (to come)
 ```
 
+Boundaries between modules are declared in each feature's root `package-info.java` and
+enforced by Spring Modulith in `ModularityTest` — an undeclared dependency fails the build,
+not review.
+
 `usecase/` is where the work is. `domain/` holds entities and the rules that belong on them;
 `support/` is for feature-local infrastructure and stays small or empty.
 

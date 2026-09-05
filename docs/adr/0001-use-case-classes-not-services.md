@@ -46,11 +46,20 @@ event. Bulk refund on event cancellation is the proving case — the knowledge b
 per-order status because it will partially fail, so it cannot be one transaction.
 
 **Everything crossing a sub-package is public.** Java's package-private visibility stops at
-the sub-package boundary, so use cases, entities and their members are `public` where a
-flat package would have kept them package-private. That is the price of this layout, paid
-knowingly: the compiler no longer enforces which classes may call an entity's mutators, and
-only `docs/` and review do. Keep mutators named for the domain act (`approveByPlatform`,
-`markEmailVerified`) so that an inappropriate call reads as wrong even though it compiles.
+the sub-package boundary, so use cases, entities and their members are `public` where a flat
+package would have kept them package-private. Keep mutators named for the domain act
+(`approveByPlatform`, `markEmailVerified`) so an inappropriate call reads as wrong.
+
+**Spring Modulith restores enforcement one level up.** Each feature's root
+`package-info.java` carries `@ApplicationModule(type = OPEN, allowedDependencies = {…})`.
+Open, so a module's sub-packages are importable; `allowedDependencies` is the real constraint,
+declaring which module may reach which. `ModularityTest` fails the build on anything
+undeclared — verified by planting `organization → identity` and watching it fail.
+
+The declared graph: `shared` depends on nothing (the moment it needs a feature, it is not
+shared); `organization` on `shared` only, and deliberately not on `identity`, which it reaches
+through `shared`'s `UserDirectory` so the two cannot become mutually dependent; `identity` and
+`platform` on `shared` and `organization`.
 
 **Generated API types stay at the web layer.** Use cases take and return domain types; the
 controller maps. Without this rule the generated DTOs quietly become the domain model, which
