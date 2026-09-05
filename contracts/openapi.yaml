@@ -1,0 +1,1217 @@
+openapi: 3.1.0
+info:
+  title: Event Ticketing API
+  version: 1.0.0
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+  description: |
+    Normative contract for the Event Ticketing platform. Hand-written; the server is built
+    to match this document, not generated from it (ADR-0003).
+
+    **Organization scoping.** The active Organization is resolved from the access token and
+    never appears in a path. Switching organizations reissues the token. Putting an
+    organization id in a URL invites the exact bug row-level security exists to prevent
+    (ADR-0004).
+
+    **Money.** Amounts are integers in the currency's smallest unit. VND has no minor unit
+    (ISO 4217 exponent 0), so `100000` is one hundred thousand dong.
+
+    **Time.** All instants are RFC 3339 in UTC. Clients render in the Venue's timezone.
+servers:
+  - url: /api/v1
+    description: Relative to the deployment host
+
+tags:
+  - name: Auth
+  - name: Organization
+  - name: Platform admin
+  - name: Venues
+  - name: Events
+  - name: Public
+  - name: Checkout
+  - name: Tickets
+  - name: Admission
+  - name: Webhooks
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Register an account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, displayName]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12 }
+                displayName: { type: string, maxLength: 100 }
+      responses:
+        '202': { description: Registered; a verification email has been sent }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Verify an email address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '410': { description: Verification token expired or already used }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Sign in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Exchange a refresh token for a new access token
+      description: |
+        Refresh tokens are stored server-side and revocable. Revocation of a Membership or a
+        Role change takes effect here, within the access token's 15-minute lifetime
+        (ADR-0005).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current refresh token
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '204': { description: Signed out }
+
+  /auth/switch-organization:
+    post:
+      tags: [Auth]
+      summary: Change the active Organization and reissue tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [organizationId]
+              properties:
+                organizationId: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /me:
+    get:
+      tags: [Auth]
+      summary: The signed-in User and their Memberships
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Me' }
+
+  /organizations:
+    post:
+      tags: [Organization]
+      summary: Create an Organization; the caller becomes its Owner
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 200 }
+      responses:
+        '201':
+          description: Created, pending approval
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+        '403':
+          description: Caller's email is not verified
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /organization/members:
+    get:
+      tags: [Organization]
+      summary: List Memberships of the active Organization
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Membership' }
+    post:
+      tags: [Organization]
+      summary: Invite a User by email address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                role: { $ref: '#/components/schemas/Role' }
+      responses:
+        '201':
+          description: Invited
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /organization/members/{userId}:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Organization]
+      summary: Change a Member's Role
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { $ref: '#/components/schemas/Role' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Membership' }
+        '409':
+          description: Would leave the Organization without an Owner
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    delete:
+      tags: [Organization]
+      summary: Remove a Member
+      responses:
+        '204': { description: Removed }
+        '409':
+          description: Would leave the Organization without an Owner
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /admin/organizations:
+    get:
+      tags: [Platform admin]
+      summary: List Organizations awaiting approval
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrganizationStatus' }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Organization' }
+
+  /admin/organizations/{organizationId}/decision:
+    post:
+      tags: [Platform admin]
+      summary: Approve or reject an Organization
+      parameters:
+        - name: organizationId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [APPROVED, REJECTED] }
+                reason: { type: string, maxLength: 1000 }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: Decided; the Owner is notified by email
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Organization' }
+
+  /venues:
+    get:
+      tags: [Venues]
+      summary: List the active Organization's Venues
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Venue' }
+    post:
+      tags: [Venues]
+      summary: Create a Venue with an empty Seat Map
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VenueInput' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Venue' }
+
+  /venues/{venueId}:
+    parameters:
+      - $ref: '#/components/parameters/VenueId'
+    get:
+      tags: [Venues]
+      summary: Read a Venue
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Venue' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Venues]
+      summary: Update a Venue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VenueInput' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Venue' }
+    delete:
+      tags: [Venues]
+      summary: Delete a Venue
+      responses:
+        '204': { description: Deleted }
+        '409':
+          description: Referenced by a published Event
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /venues/{venueId}/seat-map:
+    parameters:
+      - $ref: '#/components/parameters/VenueId'
+    get:
+      tags: [Venues]
+      summary: Read a Venue's Seat Map
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatMap' }
+    put:
+      tags: [Venues]
+      summary: Replace a Venue's Seat Map
+      description: |
+        The whole map is replaced in one request. Editing a 2,000-seat map is a bulk edit, and
+        a single atomic replacement is simpler to reason about than a stream of granular
+        operations. Editing a Seat Map never affects an Event that is already published.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SeatMap' }
+      responses:
+        '200':
+          description: Replaced
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SeatMap' }
+        '422':
+          description: Duplicate seat labels, or seats sharing a position
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /events:
+    get:
+      tags: [Events]
+      summary: List the active Organization's Events
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/EventStatus' }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Event' }
+    post:
+      tags: [Events]
+      summary: Create an Event in Draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventInput' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+
+  /events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Events]
+      summary: Read an Event
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Events]
+      summary: Update an Event
+      description: |
+        After publish, only title, description, images, listing and start time may change.
+        Changing the start time notifies every ticket holder; `notifyCount` in the response
+        states how many were notified.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EventPatch' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '409':
+          description: Field is frozen for a published Event
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /events/{eventId}/pricing-tiers:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    put:
+      tags: [Events]
+      summary: Set prices for the Event's Pricing Tiers
+      description: |
+        Tier names come from the Venue's Seat Map; this sets their prices. After publish, a
+        price change applies only to later sales, never to existing Tickets or Seat Holds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items: { $ref: '#/components/schemas/PricingTier' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PricingTier' }
+
+  /events/{eventId}/publish:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Events]
+      summary: Publish an Event
+      description: |
+        Copies the Venue's Seat Map into an immutable Event Seat Map and puts tickets on sale.
+        Requires an approved Organization, a price for every tier in use, a future start time,
+        and at least one sellable seat.
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '409':
+          description: Preconditions not met
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /events/{eventId}/close-sales:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Events]
+      summary: Stop new Orders; existing Tickets stay valid
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: Closed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+
+  /public/events:
+    get:
+      tags: [Public]
+      security: []
+      summary: Public listing of events across Organizations
+      description: |
+        Published, listed Events of approved Organizations that have not yet started, ordered
+        by start time. No ranking, relevance or personalization.
+      parameters:
+        - name: city
+          in: query
+          schema: { type: string }
+        - name: startsAfter
+          in: query
+          schema: { type: string, format: date-time }
+        - name: startsBefore
+          in: query
+          schema: { type: string, format: date-time }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/PublicEventSummary' }
+
+  /public/events/{eventId}:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Public]
+      security: []
+      summary: Public Event page
+      description: Reachable by link whatever the Event's listed status.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicEvent' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /public/events/{eventId}/seat-map:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Public]
+      security: []
+      summary: The Event Seat Map with live availability
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventSeatMap' }
+
+  /checkout:
+    post:
+      tags: [Checkout]
+      summary: Begin checkout, taking Seat Holds
+      description: |
+        Creates a Seat Hold on each requested seat and an unpaid Order. Requires a verified
+        email address: verification never happens inside a checkout, because the hold's clock
+        would race the email round-trip.
+
+        If any seat is unavailable the whole request fails and names the seats, so the client
+        can preserve the rest of the selection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [eventId, seatIds]
+              properties:
+                eventId: { type: string, format: uuid }
+                seatIds:
+                  type: array
+                  minItems: 1
+                  items: { type: string, format: uuid }
+      responses:
+        '201':
+          description: Holds taken and Order created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '403':
+          description: Email not verified
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '409':
+          description: One or more seats unavailable; `details.seatIds` names them
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /orders:
+    get:
+      tags: [Checkout]
+      summary: The signed-in User's Orders across all Organizations
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Page'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: '#/components/schemas/Order' }
+
+  /orders/{orderId}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Checkout]
+      summary: Read an Order
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Checkout]
+      summary: Abandon an unpaid Order, releasing its Seat Holds immediately
+      responses:
+        '204': { description: Abandoned }
+        '409':
+          description: Order is already paid
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /orders/{orderId}/payment-sessions:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Checkout]
+      summary: Start a payment attempt
+      description: |
+        Returns a provider-agnostic next action the client renders without knowing which
+        provider produced it (ADR-0002). An Order may have many attempts and at most one
+        success.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider]
+              properties:
+                provider: { type: string, examples: [FAKE, STRIPE] }
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentSession' }
+        '409':
+          description: Order already paid, or its Seat Holds have expired
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /orders/{orderId}/resend-email:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Tickets]
+      summary: Re-send the Order email to the buyer
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '202': { description: Queued }
+
+  /orders/{orderId}/tickets:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Tickets]
+      summary: The Tickets in an Order, each with its current Ticket Code
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Ticket' }
+
+  /webhooks/payments/{provider}:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Webhooks]
+      security: []
+      summary: Provider payment confirmation
+      description: |
+        Authenticity is verified before the payload is trusted. Handling is idempotent: the
+        same delivery twice produces one paid Order and one set of Tickets. Deliveries that
+        arrive out of order, or for an unknown or already-settled session, are acknowledged
+        and ignored rather than treated as errors.
+
+        The buyer returning to the site never confirms an Order; only this does.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        '204': { description: Acknowledged }
+        '401': { description: Signature verification failed }
+
+  /events/{eventId}/scans:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Admission]
+      summary: Present a Ticket Code at the door
+      description: |
+        The single admission endpoint. Authorisation is checked against live Membership here,
+        not against token claims, so a removed Gate Staff member stops being able to scan
+        immediately (ADR-0005).
+
+        Every attempt is recorded whatever the outcome. Concurrent scans of the same code
+        result in exactly one redemption. There is no override: a refused Ticket cannot be
+        admitted.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ticketCode, deviceId]
+              properties:
+                ticketCode: { type: string }
+                deviceId: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: |
+            The scan was processed. `outcome` says whether the person is admitted; a refusal
+            is a successful request, not an HTTP error.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScanResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { description: Rate limit exceeded for this device }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 15-minute access token. The active Organization is a claim within it.
+
+  parameters:
+    VenueId:
+      name: venueId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  responses:
+    Error4xx:
+      description: |
+        The request failed. `code` says why, from the closed `ErrorCode` enum, so that
+        clients branch on a value rather than on prose.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Tokens:
+      description: Signed in
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TokenPair' }
+    Unauthorized:
+      description: Not authenticated
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: Authenticated but not permitted
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Conflict:
+      description: Conflicts with current state
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Invalid:
+      description: Request failed validation
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  schemas:
+    Error:
+      type: object
+      description: |
+        The single error envelope used by every failure response. One shape, so that clients
+        parse errors once.
+      required: [code, message]
+      properties:
+        code: { $ref: '#/components/schemas/ErrorCode' }
+        message: { type: string, description: 'Human-readable, safe to display' }
+        details:
+          type: object
+          additionalProperties: true
+          description: Machine-readable specifics, e.g. `seatIds` for an unavailable-seat conflict
+
+    ErrorCode:
+      type: string
+      enum:
+        - VALIDATION_FAILED
+        - NOT_AUTHENTICATED
+        - EMAIL_NOT_VERIFIED
+        - NOT_PERMITTED
+        - NOT_FOUND
+        - ORGANIZATION_NOT_APPROVED
+        - LAST_OWNER
+        - ALREADY_EXISTS
+        - SEATS_UNAVAILABLE
+        - HOLD_EXPIRED
+        - EVENT_FIELD_FROZEN
+        - PUBLISH_PRECONDITION_FAILED
+        - CAPACITY_BELOW_SOLD
+        - ORDER_ALREADY_PAID
+        - VENUE_IN_USE
+        - DUPLICATE_SEAT_LABEL
+        - RATE_LIMITED
+
+    Money:
+      type: object
+      description: Integer amount in the currency's smallest unit. VND has no minor unit.
+      required: [amount, currency]
+      properties:
+        amount: { type: integer, minimum: 0 }
+        currency: { type: string, enum: [VND] }
+
+    Page:
+      type: object
+      properties:
+        nextCursor:
+          type: [string, 'null']
+          description: Absent or null when there are no further pages
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresIn]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, description: Access token lifetime in seconds }
+        activeOrganizationId: { type: [string, 'null'], format: uuid }
+
+    Role:
+      type: string
+      enum: [OWNER, MANAGER, GATE_STAFF]
+
+    OrganizationStatus:
+      type: string
+      enum: [PENDING_APPROVAL, APPROVED, REJECTED]
+
+    EventStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED, SALES_CLOSED, COMPLETED, CANCELLED]
+
+    Me:
+      type: object
+      required: [id, email, displayName, emailVerified, memberships]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        emailVerified: { type: boolean }
+        platformAdmin: { type: boolean }
+        memberships:
+          type: array
+          items: { $ref: '#/components/schemas/Membership' }
+
+    Organization:
+      type: object
+      required: [id, name, status]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        status: { $ref: '#/components/schemas/OrganizationStatus' }
+        createdAt: { type: string, format: date-time }
+
+    Membership:
+      type: object
+      required: [userId, organizationId, role]
+      properties:
+        userId: { type: string, format: uuid }
+        organizationId: { type: string, format: uuid }
+        organizationName: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+
+    VenueInput:
+      type: object
+      required: [name, city, timezone]
+      properties:
+        name: { type: string, maxLength: 200 }
+        address: { type: string, maxLength: 500 }
+        city:
+          type: string
+          maxLength: 100
+          description: A field of its own, because the public listing filters on it
+        timezone: { type: string, examples: ['Asia/Ho_Chi_Minh'] }
+
+    Venue:
+      allOf:
+        - $ref: '#/components/schemas/VenueInput'
+        - type: object
+          required: [id]
+          properties:
+            id: { type: string, format: uuid }
+            seatCount: { type: integer }
+
+    SeatMapSeat:
+      type: object
+      required: [label, x, y, tierName]
+      properties:
+        label: { type: string, maxLength: 20, description: Unique within the Seat Map }
+        x: { type: number }
+        y: { type: number }
+        tierName: { type: string, maxLength: 50 }
+
+    MapElement:
+      type: object
+      description: Never ticketed. Exists so a buyer can orient themselves.
+      required: [kind, x, y]
+      properties:
+        kind: { type: string, enum: [STAGE, ENTRANCE, AISLE, BAR, LABEL] }
+        label: { type: string, maxLength: 50 }
+        x: { type: number }
+        y: { type: number }
+        width: { type: number }
+        height: { type: number }
+
+    SeatMap:
+      type: object
+      required: [seats, elements]
+      properties:
+        seats:
+          type: array
+          items: { $ref: '#/components/schemas/SeatMapSeat' }
+        elements:
+          type: array
+          items: { $ref: '#/components/schemas/MapElement' }
+
+    PricingTier:
+      type: object
+      required: [name, price]
+      properties:
+        name: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+
+    EventInput:
+      type: object
+      required: [title, venueId, startsAt]
+      properties:
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 5000 }
+        venueId: { type: string, format: uuid }
+        startsAt: { type: string, format: date-time }
+        coverImageUrl: { type: string, format: uri }
+        listed: { type: boolean, default: true }
+
+    EventPatch:
+      type: object
+      description: Only fields permitted for the Event's current status may be present.
+      properties:
+        title: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 5000 }
+        coverImageUrl: { type: string, format: uri }
+        startsAt: { type: string, format: date-time }
+        listed: { type: boolean }
+        unsellableSeatIds:
+          type: array
+          items: { type: string, format: uuid }
+
+    Event:
+      allOf:
+        - $ref: '#/components/schemas/EventInput'
+        - type: object
+          required: [id, status, organizationId]
+          properties:
+            id: { type: string, format: uuid }
+            organizationId: { type: string, format: uuid }
+            status: { $ref: '#/components/schemas/EventStatus' }
+            publishedAt: { type: [string, 'null'], format: date-time }
+            pricingTiers:
+              type: array
+              items: { $ref: '#/components/schemas/PricingTier' }
+            soldCount: { type: integer }
+            notifyCount:
+              type: integer
+              description: Ticket holders notified by the request that produced this response
+
+    PublicEventSummary:
+      type: object
+      required: [id, title, organizationName, venueName, city, startsAt, timezone]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        organizationName: { type: string }
+        venueName: { type: string }
+        city: { type: string }
+        startsAt: { type: string, format: date-time }
+        timezone: { type: string }
+        coverImageUrl: { type: [string, 'null'], format: uri }
+        priceFrom: { $ref: '#/components/schemas/Money' }
+
+    PublicEvent:
+      allOf:
+        - $ref: '#/components/schemas/PublicEventSummary'
+        - type: object
+          properties:
+            description: { type: string }
+            status: { $ref: '#/components/schemas/EventStatus' }
+            pricingTiers:
+              type: array
+              items: { $ref: '#/components/schemas/PricingTier' }
+
+    SeatAvailability:
+      type: string
+      enum: [AVAILABLE, HELD, SOLD, NOT_FOR_SALE]
+
+    EventSeat:
+      type: object
+      required: [id, label, x, y, tierName, availability]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        x: { type: number }
+        y: { type: number }
+        tierName: { type: string }
+        availability: { $ref: '#/components/schemas/SeatAvailability' }
+
+    EventSeatMap:
+      type: object
+      description: Frozen at publish. Availability is live.
+      required: [seats, elements]
+      properties:
+        seats:
+          type: array
+          items: { $ref: '#/components/schemas/EventSeat' }
+        elements:
+          type: array
+          items: { $ref: '#/components/schemas/MapElement' }
+
+    OrderStatus:
+      type: string
+      enum: [AWAITING_PAYMENT, PAID, EXPIRED, CANCELLED]
+
+    Order:
+      type: object
+      required: [id, eventId, status, total]
+      properties:
+        id: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        eventTitle: { type: string }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        total: { $ref: '#/components/schemas/Money' }
+        seats:
+          type: array
+          items:
+            type: object
+            properties:
+              seatId: { type: string, format: uuid }
+              label: { type: string }
+              tierName: { type: string }
+              price: { $ref: '#/components/schemas/Money' }
+        holdExpiresAt:
+          type: [string, 'null']
+          format: date-time
+          description: When the Seat Holds lapse. Null once the Order is paid.
+        createdAt: { type: string, format: date-time }
+
+    NextAction:
+      type: object
+      description: |
+        What the client must do next. Rendered without knowing which provider produced it.
+      required: [type]
+      properties:
+        type: { type: string, enum: [REDIRECT, DISPLAY_QR, HOSTED_CHECKOUT, NONE] }
+        url: { type: [string, 'null'], format: uri }
+        qrPayload: { type: [string, 'null'] }
+        reference:
+          type: [string, 'null']
+          description: Transfer memo the buyer must include, for QR bank transfers
+
+    PaymentSession:
+      type: object
+      required: [id, orderId, status, nextAction]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        provider: { type: string }
+        status: { type: string, enum: [AWAITING_PAYMENT, PAID, FAILED, EXPIRED] }
+        nextAction: { $ref: '#/components/schemas/NextAction' }
+        expiresAt: { type: string, format: date-time }
+
+    Ticket:
+      type: object
+      required: [id, orderId, eventId, status]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        eventId: { type: string, format: uuid }
+        seatLabel: { type: [string, 'null'], description: Null for general admission }
+        tierName: { type: [string, 'null'] }
+        status: { type: string, enum: [VALID, REDEEMED, VOID] }
+        ticketCode:
+          type: string
+          description: |
+            The current code only. Reissuing invalidates the previous one. Carries no
+            information: seat and validity are resolved server-side at scan time.
+        redeemedAt: { type: [string, 'null'], format: date-time }
+
+    ScanOutcome:
+      type: string
+      description: Every outcome is distinct, so the door can be told what actually happened.
+      enum:
+        - ADMITTED
+        - ALREADY_REDEEMED
+        - WRONG_EVENT
+        - TICKET_VOID
+        - EVENT_NOT_OPEN
+        - EVENT_ENDED
+        - UNKNOWN_CODE
+
+    ScanResult:
+      type: object
+      required: [outcome, message]
+      properties:
+        outcome: { $ref: '#/components/schemas/ScanOutcome' }
+        message: { type: string, description: Readable at arm's length }
+        seatLabel: { type: [string, 'null'] }
+        tierName: { type: [string, 'null'] }
+        firstRedeemedAt:
+          type: [string, 'null']
+          format: date-time
+          description: |
+            Present when the outcome is ALREADY_REDEEMED, with `firstRedeemedDeviceId`. The
+            two together are how staff tell "you already went in" from "someone else used
+            your ticket".
+        firstRedeemedDeviceId: { type: [string, 'null'] }

@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: event-ticket-backend
+  datasource:
+    url: jdbc:postgresql://localhost:5432/eventticket
+    username: eventticket
+    password: eventticket
+  jpa:
+    open-in-view: false          # no lazy loading in the web layer; use cases own their transactions
+    hibernate:
+      ddl-auto: validate         # Flyway owns the schema, never Hibernate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
