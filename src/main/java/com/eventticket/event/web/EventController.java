@@ -1,6 +1,8 @@
 package com.eventticket.event.web;
 
 import com.eventticket.api.EventsApi;
+import com.eventticket.api.model.CoverConfirmation;
+import com.eventticket.api.model.CoverUpload;
 import com.eventticket.api.model.EventInput;
 import com.eventticket.api.model.EventPage;
 import com.eventticket.api.model.EventPatch;
@@ -9,16 +11,21 @@ import com.eventticket.api.model.PricingTier;
 import com.eventticket.api.model.PricingTierInput;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventChanges;
+import com.eventticket.event.usecase.BeginCoverUpload;
 import com.eventticket.event.usecase.CloseSales;
 import com.eventticket.event.usecase.CreateEvent;
 import com.eventticket.event.usecase.GetEvent;
 import com.eventticket.event.usecase.ListEvents;
 import com.eventticket.event.usecase.PublishEvent;
+import com.eventticket.event.usecase.RemoveEventCover;
+import com.eventticket.event.usecase.SetEventCover;
 import com.eventticket.event.usecase.SetPricingTiers;
 import com.eventticket.event.usecase.UpdateEvent;
 import com.eventticket.shared.money.Money;
+import java.net.URI;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,10 +44,15 @@ public class EventController implements EventsApi {
     private final SetPricingTiers setPricingTiers;
     private final PublishEvent publishEvent;
     private final CloseSales closeSales;
+    private final BeginCoverUpload beginCoverUpload;
+    private final SetEventCover setEventCover;
+    private final RemoveEventCover removeEventCover;
 
     public EventController(CreateEvent createEvent, ListEvents listEvents, GetEvent getEvent,
                     UpdateEvent updateEvent, SetPricingTiers setPricingTiers,
-                    PublishEvent publishEvent, CloseSales closeSales) {
+                    PublishEvent publishEvent, CloseSales closeSales,
+                    BeginCoverUpload beginCoverUpload, SetEventCover setEventCover,
+                    RemoveEventCover removeEventCover) {
         this.createEvent = createEvent;
         this.listEvents = listEvents;
         this.getEvent = getEvent;
@@ -48,12 +60,14 @@ public class EventController implements EventsApi {
         this.setPricingTiers = setPricingTiers;
         this.publishEvent = publishEvent;
         this.closeSales = closeSales;
+        this.beginCoverUpload = beginCoverUpload;
+        this.setEventCover = setEventCover;
+        this.removeEventCover = removeEventCover;
     }
 
     @Override
     public ResponseEntity<com.eventticket.api.model.Event> eventsPost(EventInput request) {
         var created = createEvent.create(request.getTitle(), request.getDescription(),
-                request.getCoverImageUrl() == null ? null : request.getCoverImageUrl().toString(),
                 request.getVenueId(), request.getStartsAt().toInstant(),
                 at(request.getDoorsOpenAt()), at(request.getEndsAt()),
                 request.getListed() == null || request.getListed());
@@ -105,11 +119,35 @@ public class EventController implements EventsApi {
         return ResponseEntity.ok(EventMapper.toDto(closeSales.close(eventId)));
     }
 
+    @Override
+    public ResponseEntity<CoverUpload> eventsEventIdCoverUploadsPost(UUID eventId) {
+        var authorised = beginCoverUpload.begin(eventId);
+        var form = authorised.form();
+        var dto = new CoverUpload(authorised.uploadId(), URI.create(form.url()),
+                form.fields(), form.fileField(),
+                form.expiresAt().atOffset(ZoneOffset.UTC));
+        dto.setMaxBytes(form.maxBytes());
+        return ResponseEntity.status(HttpStatus.CREATED).body(dto);
+    }
+
+    @Override
+    public ResponseEntity<com.eventticket.api.model.Event> eventsEventIdCoverPut(
+            UUID eventId, CoverConfirmation request) {
+        return ResponseEntity.ok(EventMapper.toDto(
+                setEventCover.set(eventId, request.getUploadId(), request.getAlt())));
+    }
+
+    @Override
+    public ResponseEntity<Void> eventsEventIdCoverDelete(UUID eventId) {
+        removeEventCover.remove(eventId);
+        return ResponseEntity.noContent().build();
+    }
+
     private static EventChanges toChanges(EventPatch request) {
         return new EventChanges(
                 request.getTitle(),
                 request.getDescription(),
-                request.getCoverImageUrl() == null ? null : request.getCoverImageUrl().toString(),
+                request.getCoverImageAlt(),
                 at(request.getStartsAt()),
                 at(request.getDoorsOpenAt()),
                 at(request.getEndsAt()),

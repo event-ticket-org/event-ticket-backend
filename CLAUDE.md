@@ -147,6 +147,42 @@ correct. `TenantPublisher.adopt` is the deliberate exception, for a use case tha
 identity as part of its own work (token refresh) or acts on an organization from outside it
 (platform approval). Anywhere else, the tenant should have come from the access token.
 
+## Object storage
+
+Cover images go straight from the browser to the store and are checked afterwards (ADR-0006).
+`shared/storage` is the port and the S3 adapter; `event` uses it and nothing else does.
+
+**The presigned POST policy is written by hand, and that is not an oversight.** The Java SDK v2
+presigns GET and PUT and has no POST policy at all, where the JavaScript and Python SDKs do. A
+presigned PUT would have been less code and a worse guarantee: it has no equivalent of
+`content-length-range`, so the size ceiling would live in a number the client tells us rather
+than in a condition the store enforces. Code that computes a signature is either exactly right
+or completely broken and reading it proves neither - `CoverImageUploadTest` performs real
+uploads against a real MinIO, and that is what says it works.
+
+**Uploading directly moves the validation, it does not remove it.** We choose the key, so a
+caller can only write inside their own Event; the signed conditions cap the size; and the file's
+own leading bytes decide what it is, at confirmation, because a declared content type is a claim
+made by whoever is uploading. A file that fails is deleted rather than left in the bucket at a
+key its uploader knows.
+
+**Keys are built, not remembered** — `pending/{org}/{event}/{uploadId}` and
+`covers/{org}/{event}/{uploadId}.{ext}`. That is why an upload needs no row to confirm it, and
+it is also the tenancy: both ids come from a request that has already been checked. The upload
+id is pattern-checked before it is concatenated into a path, or `../` would address the rest of
+the bucket.
+
+**`mc anonymous set download` grants `ListBucket` as well as `GetObject`.** It is the obvious
+command and it makes the bucket enumerable - and the keys carry organization and event ids, so a
+listable bucket publishes which organizations exist and how many events each has, drafts and
+unlisted ones included. `compose.yaml` sets an explicit policy with the one action serving a
+picture needs; the test container does the same.
+
+**A multipart POST must have a known content length.** `HttpRequest.BodyPublishers.ofByteArrays`
+reports its length as unknown, so the JDK client sends the form chunked, and MinIO answers a
+chunked POST with `EmptyRequestBody` - which reads like a bug in the body you built and is not.
+Concatenate and use `ofByteArray`.
+
 ## Logging
 
 Every use case that changes state logs one line at INFO; every refusal that a human might

@@ -49,6 +49,12 @@ public class Event {
     @Column(name = "cover_image_url")
     private String coverImageUrl;
 
+    @Column(name = "cover_image_key")
+    private String coverImageKey;
+
+    @Column(name = "cover_image_alt")
+    private String coverImageAlt;
+
     @Column(name = "starts_at", nullable = false)
     private Instant startsAt;
 
@@ -101,13 +107,11 @@ public class Event {
     protected Event() {}
 
     public Event(UUID organizationId, UUID venueId, String title, String description,
-                 String coverImageUrl, Instant startsAt, Instant doorsOpenAt, Instant endsAt,
-                 boolean listed) {
+                 Instant startsAt, Instant doorsOpenAt, Instant endsAt, boolean listed) {
         this.organizationId = organizationId;
         this.venueId = venueId;
         this.title = title;
         this.description = description;
-        this.coverImageUrl = coverImageUrl;
         this.startsAt = startsAt;
         this.doorsOpenAt = doorsOpenAt;
         this.endsAt = endsAt;
@@ -137,6 +141,19 @@ public class Event {
 
     public String coverImageUrl() {
         return coverImageUrl;
+    }
+
+    /** Where the object is, which is what removing it needs. Never leaves this module. */
+    public String coverImageKey() {
+        return coverImageKey;
+    }
+
+    public String coverImageAlt() {
+        return coverImageAlt;
+    }
+
+    public boolean hasCover() {
+        return coverImageKey != null;
     }
 
     public Instant startsAt() {
@@ -201,12 +218,70 @@ public class Event {
         return this;
     }
 
+    /**
+     * Refuses before a five-megabyte upload rather than after it.
+     *
+     * <p>The same condition {@code coverIs} and {@code clearCover} enforce anyway. Asking it
+     * early is the difference between "you cannot change a cancelled event" and the same
+     * sentence arriving once somebody has waited for a file to cross a phone connection.
+     */
+    public void requireCoverIsChangeable() {
+        requireStillEditable();
+    }
+
     /** requirements/003 criterion 8. */
-    public void describeAs(String title, String description, String coverImageUrl) {
+    public void describeAs(String title, String description) {
         requireStillEditable();
         this.title = title;
         this.description = description;
-        this.coverImageUrl = coverImageUrl;
+    }
+
+    /**
+     * Alt text without touching the picture, so fixing a description does not mean uploading
+     * again (requirements/003 criterion 20). Refused when there is nothing to describe: alt
+     * text for an absent image is a sentence about nothing, and the database says so too.
+     */
+    public void describeCoverAs(String alt) {
+        requireStillEditable();
+        if (!hasCover()) {
+            throw new ApiException(ErrorCodes.VALIDATION_FAILED,
+                    "There is no cover image to describe. Upload one first.");
+        }
+        this.coverImageAlt = blankToNull(alt);
+    }
+
+    /**
+     * Point this Event at a stored image (requirements/003 criterion 19).
+     *
+     * <p>Key and URL together, always, because the URL is derived from the key and the moment
+     * they disagree the delete removes the wrong object. `event_cover_is_whole` in V9 refuses
+     * any other state; this method is why nothing has to try.
+     *
+     * <p>Answers the key it replaced, or null. The caller deletes it - a store holding every
+     * cover an Event ever had is a store nobody can reason about - and doing it here would put
+     * an object store inside an entity.
+     */
+    public String coverIs(String key, String url, String alt) {
+        requireStillEditable();
+        String previous = this.coverImageKey;
+        this.coverImageKey = key;
+        this.coverImageUrl = url;
+        this.coverImageAlt = blankToNull(alt);
+        return previous;
+    }
+
+    /** Answers the key that is no longer anybody's cover, or null when there was none. */
+    public String clearCover() {
+        requireStillEditable();
+        String previous = this.coverImageKey;
+        this.coverImageKey = null;
+        this.coverImageUrl = null;
+        this.coverImageAlt = null;
+        return previous;
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     /**

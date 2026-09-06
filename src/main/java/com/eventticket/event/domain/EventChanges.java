@@ -14,7 +14,7 @@ import java.util.UUID;
  * on sale" - the safe half of an ambiguity the contract cannot currently express. Marking the
  * last held-back seat sellable again needs the contract to distinguish the two.
  */
-public record EventChanges(String title, String description, String coverImageUrl,
+public record EventChanges(String title, String description, String coverImageAlt,
                            Instant startsAt, Instant doorsOpenAt, Instant endsAt,
                            Boolean listed, List<UUID> unsellableSeatIds) {
 

@@ -27,6 +27,8 @@ public final class ErrorCodes {
     public static final String ORDER_ALREADY_PAID = "ORDER_ALREADY_PAID";
     public static final String ORDER_NOT_REFUNDABLE = "ORDER_NOT_REFUNDABLE";
     public static final String EVENT_NOT_CANCELLABLE = "EVENT_NOT_CANCELLABLE";
+    public static final String COVER_NOT_UPLOADED = "COVER_NOT_UPLOADED";
+    public static final String COVER_NOT_AN_IMAGE = "COVER_NOT_AN_IMAGE";
 
     private ErrorCodes() {}
 }

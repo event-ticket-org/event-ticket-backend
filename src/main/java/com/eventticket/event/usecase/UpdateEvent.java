@@ -63,11 +63,16 @@ public class UpdateEvent {
 
         Event event = events.findOrThrow(eventId).requireBelongsTo(organizationId);
 
-        if (changes.title() != null || changes.description() != null || changes.coverImageUrl() != null) {
+        if (changes.title() != null || changes.description() != null) {
             event.describeAs(
                     changes.title() != null ? changes.title() : event.title(),
-                    changes.description() != null ? changes.description() : event.description(),
-                    changes.coverImageUrl() != null ? changes.coverImageUrl() : event.coverImageUrl());
+                    changes.description() != null ? changes.description() : event.description());
+        }
+
+        // The picture is uploaded, not patched (ADR-0006), but what it *shows* is text like
+        // any other - and fixing a description should not mean choosing the file again.
+        if (changes.coverImageAlt() != null) {
+            event.describeCoverAs(changes.coverImageAlt());
         }
 
         Integer notified = reschedule(event, organizationId, changes);

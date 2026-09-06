@@ -2,4 +2,4 @@
 # Per the contract-first workflow, this MUST be reachable from event-ticket-kb's
 # remote main branch. Never pin a local or unmerged commit.
 repository=https://github.com/event-ticket-org/event-ticket-kb
-revision=fd796414a1c80e0cf766fa23a843d5a92414433c
+revision=d49cb94648f8167289ed129cc4bdb26632a708fe

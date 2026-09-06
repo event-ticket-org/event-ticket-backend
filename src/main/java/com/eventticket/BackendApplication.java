@@ -4,6 +4,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
+// Records bind by constructor, which needs scanning rather than a @Component on each one.
+@org.springframework.boot.context.properties.ConfigurationPropertiesScan
 @org.springframework.scheduling.annotation.EnableScheduling
 public class BackendApplication {
 
