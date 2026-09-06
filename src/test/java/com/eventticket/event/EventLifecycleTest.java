@@ -308,6 +308,37 @@ class EventLifecycleTest extends ApiTest {
         assertThat(publicListing(null)).hasSize(1);
     }
 
+    @Test
+    @DisplayName("a closed or cancelled event leaves the listing and keeps its link")
+    void theListingIsPublishedEventsOnly() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event closing = publishedEvent(manager, venue, "Sales Closing");
+        Event cancelling = publishedEvent(manager, venue, "Cancelled Show");
+
+        assertThat(publicListing(null)).extracting(e -> e.getTitle())
+                .containsExactlyInAnyOrder("Sales Closing", "Cancelled Show");
+
+        exchange(HttpMethod.POST, "/events/" + closing.getId() + "/close-sales", manager, null,
+                Event.class);
+        assertThat(exchange(HttpMethod.POST, "/events/" + cancelling.getId() + "/cancel", manager,
+                new com.eventticket.api.model.RefundRequest("The venue flooded."),
+                com.eventticket.api.model.EventCancellation.class).getStatusCode())
+                .isEqualTo(HttpStatus.ACCEPTED);
+
+        // requirements/009 criterion 10. Both were published once, and "has ever been
+        // published" is not the question the listing is asking.
+        assertThat(publicListing(null)).isEmpty();
+        assertThat(publicListing("Ho Chi Minh City")).isEmpty();
+
+        // Criterion 9: an existing link never breaks because the event's status changed. A
+        // buyer holding a ticket for a cancelled show is exactly who follows one.
+        assertThat(exchange(HttpMethod.GET, "/public/events/" + closing.getId(), null, null,
+                PublicEvent.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(exchange(HttpMethod.GET, "/public/events/" + cancelling.getId(), null, null,
+                PublicEvent.class).getStatusCode()).isEqualTo(HttpStatus.OK);
+    }
+
     private java.util.List<com.eventticket.api.model.PublicEventSummary> publicListing(String city) {
         String path = city == null ? "/public/events" : "/public/events?city={city}";
         return exchange(HttpMethod.GET, path, null, null,

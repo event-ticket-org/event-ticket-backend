@@ -56,15 +56,16 @@ public class ListPublicEvents {
 
         List<Event> found;
         if (city == null || city.isBlank()) {
-            found = events.findPublicPage(now, Organization.Status.APPROVED, after, before,
-                    from.at(), from.id(), page);
+            found = events.findPublicPage(now, Event.Status.PUBLISHED,
+                    Organization.Status.APPROVED, after, before, from.at(), from.id(), page);
         } else {
             List<UUID> venueIds = venues.findIdsByCity(city);
             // An "in ()" with nothing in it is not a query worth sending, and on some engines
             // not valid SQL either.
             found = venueIds.isEmpty() ? List.of()
-                    : events.findPublicPageAtVenues(now, Organization.Status.APPROVED, venueIds,
-                            after, before, from.at(), from.id(), page);
+                    : events.findPublicPageAtVenues(now, Event.Status.PUBLISHED,
+                            Organization.Status.APPROVED, venueIds, after, before,
+                            from.at(), from.id(), page);
         }
 
         boolean more = found.size() > limit;

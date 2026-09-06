@@ -44,10 +44,16 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     /**
      * requirements/009: published, listed, not yet started, and belonging to an Organization
      * that is approved now - not merely one that was approved when it published.
+     *
+     * <p>On {@code status}, not on {@code publishedAt}. "Has ever been published" is a
+     * different question and a one-way door: closing sales and cancelling both leave the
+     * timestamp exactly where it was, so an event nobody can buy a ticket for would sit in the
+     * listing until it started (criterion 10). The public *page* asks the other question
+     * deliberately - a link to a cancelled show must still open (criterion 9).
      */
     @Query("""
            select e from Event e
-           where e.publishedAt is not null
+           where e.status = :published
              and e.listed = true
              and e.startsAt > :now
              and e.startsAt >= :startsAfter
@@ -58,6 +64,7 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
            order by e.startsAt asc, e.id asc
            """)
     public List<Event> findPublicPage(@Param("now") Instant now,
+                                      @Param("published") Event.Status published,
                                       @Param("approved") Organization.Status approved,
                                       @Param("startsAfter") Instant startsAfter,
                                       @Param("startsBefore") Instant startsBefore,
@@ -68,7 +75,7 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     /** The same listing narrowed to a city, which is a property of the Venue rather than the Event. */
     @Query("""
            select e from Event e
-           where e.publishedAt is not null
+           where e.status = :published
              and e.listed = true
              and e.startsAt > :now
              and e.startsAt >= :startsAfter
@@ -80,6 +87,7 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
            order by e.startsAt asc, e.id asc
            """)
     public List<Event> findPublicPageAtVenues(@Param("now") Instant now,
+                                              @Param("published") Event.Status published,
                                               @Param("approved") Organization.Status approved,
                                               @Param("venueIds") List<UUID> venueIds,
                                               @Param("startsAfter") Instant startsAfter,
