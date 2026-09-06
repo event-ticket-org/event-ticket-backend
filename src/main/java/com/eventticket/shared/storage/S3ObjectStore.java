@@ -164,11 +164,26 @@ public class S3ObjectStore implements ObjectStore {
         return properties.publicBaseUrl().replaceAll("/+$", "") + "/" + key;
     }
 
+    /**
+     * The {@code action} of the form the browser submits, which is not necessarily the address
+     * this application uses. Containerising the backend is what separates them: {@code endpoint}
+     * becomes a name the container network resolves and a browser does not, and every upload
+     * fails at a hostname that does not exist outside Docker.
+     *
+     * <p>Pointing the form somewhere else is safe because a POST policy signs the policy
+     * document - bucket, key, and the conditions - and not the host. The same signature is
+     * valid at any address that reaches the same bucket, which is exactly what a reverse proxy
+     * or a published port is.
+     */
     private String bucketUrl() {
-        String base = properties.endpoint() == null || properties.endpoint().isBlank()
-                ? "https://s3." + properties.region() + ".amazonaws.com"
-                : properties.endpoint();
+        String base = configured(properties.uploadBaseUrl()) ? properties.uploadBaseUrl()
+                : configured(properties.endpoint()) ? properties.endpoint()
+                : "https://s3." + properties.region() + ".amazonaws.com";
         return base.replaceAll("/+$", "") + "/" + properties.bucket();
+    }
+
+    private static boolean configured(String value) {
+        return value != null && !value.isBlank();
     }
 
     private static byte[] hmac(byte[] key, String data) {

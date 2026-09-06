@@ -57,6 +57,20 @@ exercising: idempotency, the tenant a webhook has to adopt, and the seats it sel
 `--twice` sends one delivery id twice, which is criterion 4 in one command: two 204s, one paid
 Order, one set of Tickets.
 
+## Running it as a container
+
+```bash
+docker build -t event-ticket-backend:local .
+```
+
+The image carries no active profile, so it has no credentials: `JWT_SECRET`,
+`TICKET_CODE_KEY`, `DATABASE_PASSWORD`, `STORAGE_SECRET_KEY` and `FAKE_PAYMENT_SECRET` have no
+defaults and a container without them refuses to boot. That is deliberate - see
+[CLAUDE.md](CLAUDE.md#no-credential-has-a-default).
+
+[event-ticket-deploy](https://github.com/event-ticket-org/event-ticket-deploy) runs this
+alongside the frontend, Postgres and MinIO with one origin in front of both halves.
+
 ## How the code is organised
 
 Package-by-feature, and **one class per use case** — `PublishEvent`, `CreateSeatHold`,

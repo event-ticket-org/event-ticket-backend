@@ -47,7 +47,7 @@ public class FakePaymentProvider implements PaymentProvider {
     private final String secret;
 
     public FakePaymentProvider(ObjectMapper json,
-                        @Value("${app.payment.fake.secret:fake-provider-shared-secret}") String secret) {
+                        @Value("${app.payment.fake.secret}") String secret) {
         this.json = json;
         this.secret = secret;
     }

@@ -223,6 +223,21 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<!--
+						`./mvnw spring-boot:run` keeps working with no arguments, which is what
+						the README and CLAUDE.md tell somebody to type. The dev profile is where
+						the credentials live now - application.yml gives none of them a default,
+						so without this the documented command would fail to start.
+
+						This configures `spring-boot:run` only. The packaged jar carries no
+						active profile, which is the half that matters: a container inherits
+						nothing from here and must supply its own environment.
+					-->
+					<profiles>
+						<profile>dev</profile>
+					</profiles>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>
