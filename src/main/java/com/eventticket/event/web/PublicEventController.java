@@ -33,10 +33,11 @@ public class PublicEventController implements PublicApi {
     }
 
     @Override
-    public ResponseEntity<PublicEventPage> publicEventsGet(String city, OffsetDateTime startsAfter,
+    public ResponseEntity<PublicEventPage> publicEventsGet(String q, String city,
+                                                           OffsetDateTime startsAfter,
                                                            OffsetDateTime startsBefore,
                                                            Integer limit, String cursor) {
-        var page = listPublicEvents.list(city, at(startsAfter), at(startsBefore), limit, cursor);
+        var page = listPublicEvents.list(q, city, at(startsAfter), at(startsBefore), limit, cursor);
 
         var dto = new PublicEventPage();
         page.items().forEach(view -> dto.addItemsItem(EventMapper.toSummaryDto(view)));

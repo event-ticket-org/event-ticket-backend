@@ -21,9 +21,10 @@ import org.springframework.data.repository.query.Param;
  * all. The cursor is the last row's sort key, so the page after it is exact.
  *
  * <p>No parameter here is optional, and none is compared to null. An unfiltered status is the
- * whole set of statuses and an absent bound is the edge of time, because Postgres cannot infer
- * the type of a bare parameter in {@code ? is null} and rejects the statement outright. See
- * {@code PageCursor}.
+ * whole set of statuses, an absent bound is the edge of time, and an absent text filter is
+ * {@code %} - which matches everything and so needs no branch. Postgres cannot infer the type
+ * of a bare parameter in {@code ? is null} and rejects the statement outright, and a query
+ * built in two shapes is two queries to keep correct. See {@code PageCursor}.
  */
 public interface EventRepository extends JpaRepository<Event, UUID> {
 
@@ -58,6 +59,8 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
              and e.startsAt > :now
              and e.startsAt >= :startsAfter
              and e.startsAt <= :startsBefore
+             and lower(function('unaccent', e.title))
+                 like lower(function('unaccent', :title)) escape '\\'
              and e.organizationId in (select o.id from Organization o where o.status = :approved)
              and (e.startsAt > :cursorAt
                   or (e.startsAt = :cursorAt and e.id > :cursorId))
@@ -68,6 +71,7 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
                                       @Param("approved") Organization.Status approved,
                                       @Param("startsAfter") Instant startsAfter,
                                       @Param("startsBefore") Instant startsBefore,
+                                      @Param("title") String title,
                                       @Param("cursorAt") Instant cursorAt,
                                       @Param("cursorId") UUID cursorId,
                                       Pageable page);
@@ -80,6 +84,8 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
              and e.startsAt > :now
              and e.startsAt >= :startsAfter
              and e.startsAt <= :startsBefore
+             and lower(function('unaccent', e.title))
+                 like lower(function('unaccent', :title)) escape '\\'
              and e.venueId in :venueIds
              and e.organizationId in (select o.id from Organization o where o.status = :approved)
              and (e.startsAt > :cursorAt
@@ -92,6 +98,7 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
                                               @Param("venueIds") List<UUID> venueIds,
                                               @Param("startsAfter") Instant startsAfter,
                                               @Param("startsBefore") Instant startsBefore,
+                                              @Param("title") String title,
                                               @Param("cursorAt") Instant cursorAt,
                                               @Param("cursorId") UUID cursorId,
                                               Pageable page);
