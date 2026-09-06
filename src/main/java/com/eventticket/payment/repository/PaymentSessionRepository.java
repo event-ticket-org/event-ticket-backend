@@ -12,4 +12,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface PaymentSessionRepository extends JpaRepository<PaymentSession, UUID> {
 
     public Optional<PaymentSession> findByProviderAndProviderRef(String provider, String providerRef);
+
+    /**
+     * The attempt that actually took the money, which is what a provider reverses. KB invariant
+     * 18 makes at most one of these, so the Optional is honest rather than a first-of-many.
+     */
+    public Optional<PaymentSession> findByOrderIdAndStatus(UUID orderId, PaymentSession.Status status);
 }

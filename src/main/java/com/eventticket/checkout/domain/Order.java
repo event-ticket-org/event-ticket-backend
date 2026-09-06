@@ -26,7 +26,7 @@ import java.util.UUID;
 @Table(name = "ticket_order")
 public class Order {
 
-    public enum Status { AWAITING_PAYMENT, PAID, EXPIRED, CANCELLED }
+    public enum Status { AWAITING_PAYMENT, PAID, EXPIRED, CANCELLED, REFUNDED }
 
     @Id
     @GeneratedValue
@@ -57,8 +57,11 @@ public class Order {
 
     /**
      * requirements/005 criterion 9. A confirmation that arrives after the holds lapsed must
-     * not silently keep the money. There is no refund machinery until requirements/008, so
-     * this is the flag that phase - or a person - acts on.
+     * not silently keep the money: the seats went back on sale and the payment did not, so
+     * this Order is EXPIRED and holding money anyway.
+     *
+     * <p>requirements/008 is what finally acts on it. Until then nothing read this column,
+     * which is a state the platform could reach and not leave.
      */
     @Column(name = "refund_required", nullable = false)
     private boolean refundRequired;
@@ -173,6 +176,37 @@ public class Order {
     public void expired() {
         this.status = Status.EXPIRED;
         this.holdExpiresAt = null;
+    }
+
+    /**
+     * requirements/008 criteria 1 and 2. Refusing here is the whole of what "refundable"
+     * means, and the interesting case is the one that is not PAID: an Order whose payment
+     * landed after its holds lapsed is EXPIRED and is holding money anyway. Requiring PAID
+     * would refuse precisely the case this phase was brought forward to fix.
+     *
+     * <p>A redeemed Ticket is the other refusal (criterion 3) and is not checked here - this
+     * class cannot see Tickets, and asking the database rather than inverting a module
+     * dependency is the rule. {@code RefundOrder} makes that check.
+     */
+    public void requireRefundable() {
+        if (status == Status.REFUNDED) {
+            throw new ApiException(ErrorCodes.ORDER_NOT_REFUNDABLE,
+                    "This order has already been refunded.");
+        }
+        if (status != Status.PAID && !refundRequired) {
+            throw new ApiException(ErrorCodes.ORDER_NOT_REFUNDABLE,
+                    "Nothing was paid for this order, so there is nothing to refund.");
+        }
+    }
+
+    /**
+     * The money is on its way back. {@code refundRequired} is cleared with it: the flag asks
+     * for exactly this, and an Order that still asked for a refund after being refunded would
+     * keep appearing on the list of Orders holding money the platform should not keep.
+     */
+    public void refunded() {
+        this.status = Status.REFUNDED;
+        this.refundRequired = false;
     }
 
     public Order requireBuyerOrOrganization(UUID userId, UUID organizationId) {

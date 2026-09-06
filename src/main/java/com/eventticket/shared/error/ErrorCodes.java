@@ -25,6 +25,8 @@ public final class ErrorCodes {
     public static final String SEATS_UNAVAILABLE = "SEATS_UNAVAILABLE";
     public static final String HOLD_EXPIRED = "HOLD_EXPIRED";
     public static final String ORDER_ALREADY_PAID = "ORDER_ALREADY_PAID";
+    public static final String ORDER_NOT_REFUNDABLE = "ORDER_NOT_REFUNDABLE";
+    public static final String EVENT_NOT_CANCELLABLE = "EVENT_NOT_CANCELLABLE";
 
     private ErrorCodes() {}
 }

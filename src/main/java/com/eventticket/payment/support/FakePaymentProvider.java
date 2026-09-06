@@ -29,6 +29,10 @@ import org.springframework.stereotype.Component;
  * shared secret, compared in constant time. Verifying the *raw* bytes rather than a re-encoded
  * object is the part that transfers - a payload parsed and serialised again has a different
  * signature, and the bug only appears in production.
+ *
+ * <p>Refunds arrive down the same signed channel as payments and say which they are in the
+ * body, because that is what real providers do - one endpoint, one secret, a typed event.
+ * Taking the kind from the URL instead would make the fake easier and the abstraction wrong.
  */
 @Component
 public class FakePaymentProvider implements PaymentProvider {
@@ -67,6 +71,16 @@ public class FakePaymentProvider implements PaymentProvider {
                 attempt.holdExpiresAt());
     }
 
+    /**
+     * A reversal is instant to *start* and settles by callback, exactly as a payment does.
+     * Nothing here decides whether the money goes back - the confirmation does, and in
+     * development that is a script signing a body.
+     */
+    @Override
+    public Reversal refund(RefundAttempt attempt) {
+        return new Reversal("refund-" + UUID.randomUUID());
+    }
+
     @Override
     public Confirmation verify(byte[] rawBody, Map<String, String> headers) {
         String presented = headers.get(SIGNATURE_HEADER);
@@ -76,10 +90,17 @@ public class FakePaymentProvider implements PaymentProvider {
         }
         try {
             JsonNode body = json.readTree(rawBody);
+            String status = body.path("status").asString();
+            // REFUNDED and REFUND_FAILED are about a refund; PAID and anything else are about
+            // a payment. The status carries the kind because a provider's event type is what
+            // carries it, and a separate field would be one this fake invented.
+            boolean isRefund = status.startsWith("REFUND");
             return new Confirmation(
+                    isRefund ? Kind.REFUND : Kind.PAYMENT,
                     body.path("eventId").asString(),
                     body.path("providerRef").asString(),
-                    "PAID".equals(body.path("status").asString()));
+                    isRefund ? "REFUNDED".equals(status) : "PAID".equals(status),
+                    body.path("failureReason").asString(null));
         } catch (tools.jackson.core.JacksonException e) {
             throw new ApiException(ErrorCodes.VALIDATION_FAILED, "The webhook body was not readable.");
         }

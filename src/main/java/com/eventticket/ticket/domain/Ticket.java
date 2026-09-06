@@ -143,6 +143,27 @@ public class Ticket {
         return redeemedDeviceId;
     }
 
+    /**
+     * requirements/008 criterion 4. A refunded Order's Tickets stop admitting anyone, and the
+     * door says so in its own words rather than reporting an unknown code - the person holding
+     * it was sold something real and is entitled to be told what happened to it.
+     *
+     * <p><b>A redeemed Ticket is left alone.</b> Somebody has already walked through the door,
+     * and nothing takes that back (criterion 3, KB invariant 21) - so REDEEMED is a final
+     * state and this is a no-op against one.
+     *
+     * <p>The guard is here rather than in the caller because of what happened without it:
+     * cancelling an Event voids every Ticket first and refunds afterwards, so a blanket void
+     * turned a redeemed Ticket into a void one, and the refund check that asks "has anybody
+     * been let in?" then found nobody and refunded an Order for somebody who had already been
+     * admitted. One rule, on the thing it is about, cannot be got wrong by the next caller.
+     */
+    public void voided() {
+        if (status == Status.VALID) {
+            this.status = Status.VOID;
+        }
+    }
+
     public boolean isVoid() {
         return status == Status.VOID;
     }

@@ -41,7 +41,17 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     public List<Ticket> findByOrderIdOrderBySeatLabelAsc(UUID orderId);
 
+    /** requirements/008 criterion 6: cancelling voids every Ticket, not only the paid ones. */
+    public List<Ticket> findByEventId(UUID eventId);
+
     public Optional<Ticket> findByCodeLookup(String codeLookup);
 
     public long countByOrderId(UUID orderId);
+
+    /**
+     * requirements/008 criterion 3, asked before anything is refunded: has anyone been let in
+     * on this Order? A count rather than a load, because the answer is a yes or no and the
+     * Tickets themselves are not wanted.
+     */
+    public long countByOrderIdAndStatus(UUID orderId, Ticket.Status status);
 }
