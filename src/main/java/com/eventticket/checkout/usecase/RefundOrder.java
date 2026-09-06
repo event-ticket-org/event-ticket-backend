@@ -89,6 +89,7 @@ public class RefundOrder {
     @Transactional
     public Refund refund(Order order, String reason) {
         order.requireRefundable();
+        requireNoRefundInFlight(order);
         requireNobodyHasBeenLetIn(order);
 
         // A provider reverses a charge, not an order, so the successful attempt is what this
@@ -118,6 +119,26 @@ public class RefundOrder {
         log.info("Started refund orderId={} refundId={} provider={} amount={}",
                 order.id(), refund.id(), provider.name(), order.total().amount());
         return refund;
+    }
+
+    /**
+     * One live refund per Order, refused in words rather than by a constraint.
+     *
+     * <p>{@code refund_one_live_per_order} in V7 is what makes this true concurrently, and it
+     * was doing the whole job alone: a second attempt violated the index and came back a 500
+     * reading "the request could not be completed". An organizer double-clicking a button they
+     * were nervous about is the likeliest way to reach it, and that is the worst possible
+     * moment to answer with nothing.
+     */
+    private void requireNoRefundInFlight(Order order) {
+        refunds.findByOrderIdAndStatusNot(order.id(), Refund.Status.REFUND_FAILED)
+                .ifPresent(existing -> {
+                    throw new ApiException(ErrorCodes.ORDER_NOT_REFUNDABLE,
+                            existing.status() == Refund.Status.REFUND_PENDING
+                                    ? "A refund for this order is already with the payment "
+                                      + "provider. Wait for it to settle."
+                                    : "This order has already been refunded.");
+                });
     }
 
     /**
