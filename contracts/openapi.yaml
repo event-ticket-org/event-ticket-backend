@@ -467,6 +467,77 @@ paths:
           description: Preconditions not met
           content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
 
+  /events/{eventId}/cover-uploads:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Events]
+      summary: Begin a cover image upload
+      description: |
+        Answers with everything needed to send one image straight to the system's object
+        storage, and nothing about which storage that is: a URL to post a form to, the fields
+        that form must carry, and a handle to confirm with afterwards. A client that reads the
+        answer rather than the provider works against any of them (ADR-0006, and ADR-0002 for
+        the same rule applied to payments).
+
+        The upload it authorises is narrow on purpose. The key is chosen here, so a caller
+        cannot write anywhere else in the store; the fields cap the size and require an image
+        content type; and it expires in minutes. Nothing uploaded is reachable, or is the
+        Event's cover, until `PUT /events/{eventId}/cover` accepts it.
+      responses:
+        '201':
+          description: Upload authorised
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CoverUpload' }
+        '409':
+          description: The Event can no longer be changed
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /events/{eventId}/cover:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    put:
+      tags: [Events]
+      summary: Make an uploaded image the Event's cover
+      description: |
+        Checks what actually arrived and adopts it. The upload went straight to storage, so
+        this is the first moment the system has seen the bytes: the content type a client
+        declared is a claim, and the file's own leading bytes are the answer. An upload that
+        is not an image is refused and discarded rather than served.
+
+        Replacing a cover removes the one it replaced. The Event's `coverImageUrl` is written
+        here and is read-only everywhere else.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CoverConfirmation' }
+      responses:
+        '200':
+          description: Cover set
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Event' }
+        '409':
+          description: |
+            Nothing was uploaded against that handle, what arrived is not an image of a type
+            we serve, or the Event can no longer be changed.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    delete:
+      tags: [Events]
+      summary: Remove the Event's cover
+      description: |
+        Clears `coverImageUrl` and deletes the stored image. An Event with no cover is the
+        ordinary state, not a broken one - which is why removing is its own verb rather than
+        a null in a patch.
+      responses:
+        '204':
+          description: Removed
+        '409':
+          description: The Event can no longer be changed
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
   /events/{eventId}/close-sales:
     parameters:
       - $ref: '#/components/parameters/EventId'
@@ -927,7 +998,52 @@ components:
         - EVENT_NOT_CANCELLABLE
         - VENUE_IN_USE
         - DUPLICATE_SEAT_LABEL
+        - COVER_NOT_UPLOADED
+        - COVER_NOT_AN_IMAGE
         - RATE_LIMITED
+
+    CoverUpload:
+      type: object
+      description: |
+        A form to post one image to, described rather than named. `url` and `fields` are
+        whatever the store requires; a client copies every field into a multipart form, adds
+        the file last under the name in `fileField`, and posts it. Reading the answer instead
+        of knowing the provider is what keeps this contract free of one.
+      required: [uploadId, url, fields, fileField, expiresAt]
+      properties:
+        uploadId:
+          type: string
+          description: Handle to confirm with. Meaningless to anything but this system.
+        url: { type: string, format: uri }
+        fields:
+          type: object
+          additionalProperties: { type: string }
+          description: |
+            Sent as form fields, in the order given, before the file. They carry the
+            authorisation and the conditions it was signed under - the key, the size ceiling
+            and the required content type - so altering any of them invalidates the upload.
+        fileField:
+          type: string
+          description: The form field name the file itself goes under.
+        maxBytes:
+          type: integer
+          format: int64
+          description: |
+            The ceiling the upload was signed with, so a client can refuse a file it already
+            knows is too large rather than sending it and being told.
+        expiresAt: { type: string, format: date-time }
+
+    CoverConfirmation:
+      type: object
+      required: [uploadId]
+      properties:
+        uploadId: { type: string }
+        alt:
+          type: [string, 'null']
+          maxLength: 200
+          description: |
+            What the picture shows. Asked for here, at the moment somebody is looking at the
+            image they just chose, rather than left to a field they will never come back to.
 
     Money:
       type: object
@@ -1106,7 +1222,14 @@ components:
           type: [string, 'null']
           format: date-time
           description: When admission closes. Required to publish; must be after `startsAt`.
-        coverImageUrl: { type: string, format: uri }
+        coverImageAlt:
+          type: [string, 'null']
+          maxLength: 200
+          description: |
+            What the cover shows, for somebody who cannot see it. Written by the organizer,
+            because nobody else knows: a title repeated beside the picture it describes is
+            what a screen reader reads twice, and is worse than the empty alt an undescribed
+            image gets.
         listed: { type: boolean, default: true }
 
     EventPatch:
@@ -1115,7 +1238,7 @@ components:
       properties:
         title: { type: string, maxLength: 200 }
         description: { type: string, maxLength: 5000 }
-        coverImageUrl: { type: string, format: uri }
+        coverImageAlt: { type: [string, 'null'], maxLength: 200 }
         startsAt: { type: string, format: date-time }
         doorsOpenAt: { type: string, format: date-time }
         endsAt: { type: string, format: date-time }
@@ -1133,6 +1256,15 @@ components:
             id: { type: string, format: uuid }
             organizationId: { type: string, format: uuid }
             status: { $ref: '#/components/schemas/EventStatus' }
+            coverImageUrl:
+              type: [string, 'null']
+              format: uri
+              readOnly: true
+              description: |
+                Where the Event's cover is served from. Written by `PUT /events/{eventId}/cover`
+                and cleared by `DELETE` on the same path - never by a patch, because the bytes
+                and the reference are one thing and a client that could set this could point an
+                Event at a picture nobody checked (ADR-0006).
             publishedAt: { type: [string, 'null'], format: date-time }
             pricingTiers:
               type: array
@@ -1160,6 +1292,7 @@ components:
         startsAt: { type: string, format: date-time }
         timezone: { type: string }
         coverImageUrl: { type: [string, 'null'], format: uri }
+        coverImageAlt: { type: [string, 'null'] }
         priceFrom: { $ref: '#/components/schemas/Money' }
 
     PublicEvent:

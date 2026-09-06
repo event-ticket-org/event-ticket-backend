@@ -69,7 +69,9 @@ public class ApiExceptionHandler {
                  ErrorCodes.HOLD_EXPIRED,
                  ErrorCodes.ORDER_ALREADY_PAID,
                  ErrorCodes.ORDER_NOT_REFUNDABLE,
-                 ErrorCodes.EVENT_NOT_CANCELLABLE -> HttpStatus.CONFLICT;
+                 ErrorCodes.EVENT_NOT_CANCELLABLE,
+                 ErrorCodes.COVER_NOT_UPLOADED,
+                 ErrorCodes.COVER_NOT_AN_IMAGE -> HttpStatus.CONFLICT;
             case ErrorCodes.RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.UNPROCESSABLE_ENTITY;
         };

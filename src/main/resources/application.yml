@@ -40,6 +40,22 @@ app:
     expiry-sweep: PT1M
   email:
     retry-interval: PT1M
+  storage:
+    # Object storage for cover images (ADR-0006). Locally this is the MinIO container in
+    # compose.yaml; deployed, the endpoint is left empty and the SDK resolves AWS itself.
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    region: ${STORAGE_REGION:ap-southeast-1}
+    bucket: ${STORAGE_BUCKET:event-ticket-covers}
+    access-key: ${STORAGE_ACCESS_KEY:eventticket}
+    secret-key: ${STORAGE_SECRET_KEY:eventticket}
+    # Where a browser fetches a cover from. Separate from `endpoint` because they stop being
+    # the same address the moment anything is put in front of the bucket, and because the
+    # application talks to storage over the container network while a browser does not.
+    public-base-url: ${STORAGE_PUBLIC_BASE_URL:http://localhost:9000/event-ticket-covers}
+    # nfr.md: five megabytes is generous for a poster and small enough that no resizing
+    # pipeline is warranted. Signed into the upload, so the store refuses a larger one.
+    max-bytes: 5242880
+    upload-validity: PT10M
   tickets:
     # Version to secret. Every version listed is accepted at the door; only the current one is
     # issued, which is how a key can be rotated without invalidating tickets already sold.

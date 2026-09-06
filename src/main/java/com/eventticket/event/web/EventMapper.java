@@ -33,6 +33,7 @@ final class EventMapper {
                 EventStatus.fromValue(event.status().name()));
         dto.setDescription(event.description());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
+        dto.setCoverImageAlt(event.coverImageAlt());
         dto.setDoorsOpenAt(at(event.doorsOpenAt()));
         dto.setEndsAt(at(event.endsAt()));
         dto.setListed(event.isListed());
@@ -54,6 +55,7 @@ final class EventMapper {
         var dto = new PublicEvent(event.id(), event.title(), view.organizationName(),
                 view.venueName(), view.city(), at(event.startsAt()), view.timezone());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
+        dto.setCoverImageAlt(event.coverImageAlt());
         dto.setDescription(event.description());
         dto.setDoorsOpenAt(at(event.doorsOpenAt()));
         dto.setEndsAt(at(event.endsAt()));
@@ -68,6 +70,7 @@ final class EventMapper {
         var dto = new PublicEventSummary(event.id(), event.title(), view.organizationName(),
                 view.venueName(), view.city(), at(event.startsAt()), view.timezone());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
+        dto.setCoverImageAlt(event.coverImageAlt());
         view.pricing().cheapest().ifPresent(price -> dto.setPriceFrom(toDto(price)));
         return dto;
     }
