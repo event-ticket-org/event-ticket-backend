@@ -38,9 +38,13 @@ final class EventMapper {
         dto.setListed(event.isListed());
         dto.setPublishedAt(at(event.publishedAt()));
         dto.setPricingTiers(toDto(detail.pricing()));
-        // Nothing has been sold until Orders exist (requirements/004-005). A real count
-        // replaces this when they do; it is not a placeholder for an unwritten query.
-        dto.setSoldCount(0);
+        // The real count, at last. This read "nothing has been sold until Orders exist" and
+        // said so as a hardcoded zero; Orders exist, and requirements/008 needed the count
+        // beside it anyway.
+        dto.setSoldCount((int) detail.soldCount());
+        // requirements/008 criterion 10: Orders on this Event holding money that should be
+        // given back. Here because this is where an organizer looks.
+        dto.setRefundRequiredCount((int) detail.refundRequiredCount());
         dto.setNotifyCount(detail.notifiedCount());
         return dto;
     }

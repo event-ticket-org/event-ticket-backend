@@ -86,7 +86,10 @@ public class UpdateEvent {
 
         SeatMapDocument map = event.isPublished() ? null : venues.findOrThrow(event.venueId()).seatMap();
         EventPricing pricing = EventPricing.of(event, map, tiers.findByEventId(eventId));
-        return new EventDetail(event, pricing, notified);
+        EventDetail detail = EventDetail.of(event, pricing).notifying(notified);
+        return events.countsFor(java.util.List.of(eventId)).stream().findFirst()
+                .map(counts -> detail.withCounts(counts.getSold(), counts.getRefundRequired()))
+                .orElse(detail);
     }
 
     /**

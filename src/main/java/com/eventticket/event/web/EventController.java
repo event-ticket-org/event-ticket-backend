@@ -6,6 +6,7 @@ import com.eventticket.api.model.EventPage;
 import com.eventticket.api.model.EventPatch;
 import com.eventticket.api.model.EventStatus;
 import com.eventticket.api.model.PricingTier;
+import com.eventticket.api.model.PricingTierInput;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventChanges;
 import com.eventticket.event.usecase.CloseSales;
@@ -81,9 +82,14 @@ public class EventController implements EventsApi {
         return ResponseEntity.ok(EventMapper.toDto(updateEvent.update(eventId, toChanges(request))));
     }
 
+    /**
+     * Takes {@code PricingTierInput}, not {@code PricingTier}. The contract split the two so a
+     * response can report a tier that is named and not yet priced, while a request cannot ask
+     * for that - unpricing a tier is not an operation this API has.
+     */
     @Override
     public ResponseEntity<List<PricingTier>> eventsEventIdPricingTiersPut(
-            UUID eventId, List<PricingTier> request) {
+            UUID eventId, List<PricingTierInput> request) {
         Map<String, Money> prices = new LinkedHashMap<>();
         request.forEach(tier -> prices.put(tier.getName(), EventMapper.toMoney(tier.getPrice())));
         return ResponseEntity.ok(EventMapper.toDto(setPricingTiers.set(eventId, prices)));

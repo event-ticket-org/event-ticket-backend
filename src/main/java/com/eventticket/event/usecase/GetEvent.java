@@ -9,6 +9,7 @@ import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.venue.domain.SeatMapDocument;
 import com.eventticket.venue.repository.VenueRepository;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +51,14 @@ public class GetEvent {
         // asking a question whose answer cannot matter.
         SeatMapDocument map = event.isPublished() ? null : venues.findOrThrow(event.venueId()).seatMap();
 
-        return EventDetail.of(event, EventPricing.of(event, map, tiers.findByEventId(eventId)));
+        EventDetail detail = EventDetail.of(event,
+                EventPricing.of(event, map, tiers.findByEventId(eventId)));
+
+        // Sold and refund-required are asked of the database rather than of checkout, which
+        // already depends on this module. Zero when there are no Orders at all, which is what
+        // an absent row means.
+        return events.countsFor(List.of(eventId)).stream().findFirst()
+                .map(counts -> detail.withCounts(counts.getSold(), counts.getRefundRequired()))
+                .orElse(detail);
     }
 }

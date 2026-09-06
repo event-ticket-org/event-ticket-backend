@@ -67,7 +67,9 @@ public class ApiExceptionHandler {
                  ErrorCodes.CAPACITY_BELOW_SOLD,
                  ErrorCodes.SEATS_UNAVAILABLE,
                  ErrorCodes.HOLD_EXPIRED,
-                 ErrorCodes.ORDER_ALREADY_PAID -> HttpStatus.CONFLICT;
+                 ErrorCodes.ORDER_ALREADY_PAID,
+                 ErrorCodes.ORDER_NOT_REFUNDABLE,
+                 ErrorCodes.EVENT_NOT_CANCELLABLE -> HttpStatus.CONFLICT;
             case ErrorCodes.RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
             default -> HttpStatus.UNPROCESSABLE_ENTITY;
         };

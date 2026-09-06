@@ -88,6 +88,42 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
                                               @Param("cursorId") UUID cursorId,
                                               Pageable page);
 
+    /**
+     * How many seats each Event has sold, and how many of its Orders are holding money that
+     * should be given back (requirements/008 criterion 10).
+     *
+     * <p>Native, and over {@code ticket_order} and {@code order_seat}, which belong to
+     * {@code checkout} - a module that already depends on this one. Asking the database is the
+     * rule here rather than inverting that dependency for two numbers, the same way a Venue in
+     * use is refused by a trigger instead of by a query into {@code event}.
+     *
+     * <p>Whole pages at a time, because the counts are shown in a list and a query per row is
+     * the slowness that only appears once somebody has real data. Row-level security still
+     * applies: this runs as the application role under the caller's tenant.
+     *
+     * <p>A REFUNDED Order is not counted as sold. Its seats went back on sale, so counting them
+     * would tell an organizer they have less capacity left than they do.
+     */
+    @Query(value = """
+           select o.event_id                                          as eventId,
+                  count(s.id) filter (where o.status = 'PAID')         as sold,
+                  count(distinct o.id) filter (where o.refund_required) as refundRequired
+             from ticket_order o
+             left join order_seat s on s.order_id = o.id
+            where o.event_id in (:eventIds)
+            group by o.event_id
+           """, nativeQuery = true)
+    public List<EventCounts> countsFor(@Param("eventIds") Collection<UUID> eventIds);
+
+    /** Projection for {@link #countsFor}. Spring Data maps the columns by name. */
+    public interface EventCounts {
+        UUID getEventId();
+
+        long getSold();
+
+        long getRefundRequired();
+    }
+
     public default Event findOrThrow(UUID id) {
         return findById(id).orElseThrow(() -> ApiException.notFound("Event"));
     }

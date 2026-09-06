@@ -37,6 +37,12 @@ import org.springframework.transaction.annotation.Transactional;
  * a repeat; and two deliveries racing each other both do the work but only one can commit the
  * row, so the loser rolls back entirely. The cheap {@code exists} at the top is for the common
  * case, not for correctness.
+ *
+ * <p>It also confirms refunds, which is why the verification and the duplicate check are here
+ * and the refund work is next door in {@link ConfirmRefund}. Providers send both flows down one
+ * signed channel with one secret, so there is one place a delivery is authenticated and one
+ * table in which it is seen only once. Two entry points would be two copies of the part that
+ * must not be got wrong twice.
  */
 @Component
 public class ConfirmPayment {
@@ -54,12 +60,14 @@ public class ConfirmPayment {
     private final IssueTickets issueTickets;
     private final TenantPublisher tenant;
     private final AuditTrail audit;
+    private final ConfirmRefund confirmRefund;
     private final Map<String, PaymentProvider> providers;
 
     public ConfirmPayment(PaymentSessionRepository sessions, PaymentEventRepository deliveries,
                    OrderRepository orders, OrderSeatRepository orderSeats,
                    EventSeatAvailability availability, IssueTickets issueTickets,
-                   TenantPublisher tenant, AuditTrail audit, List<PaymentProvider> providers) {
+                   TenantPublisher tenant, AuditTrail audit, ConfirmRefund confirmRefund,
+                   List<PaymentProvider> providers) {
         this.sessions = sessions;
         this.deliveries = deliveries;
         this.orders = orders;
@@ -68,6 +76,7 @@ public class ConfirmPayment {
         this.issueTickets = issueTickets;
         this.tenant = tenant;
         this.audit = audit;
+        this.confirmRefund = confirmRefund;
         this.providers = providers.stream()
                 .collect(Collectors.toMap(PaymentProvider::name, Function.identity()));
     }
@@ -86,6 +95,13 @@ public class ConfirmPayment {
             log.info("Ignoring repeat webhook provider={} eventId={}",
                     providerName, confirmation.providerEventId());
             return Outcome.DUPLICATE;
+        }
+
+        // The kind comes from the verified payload, never from the path. A refund's reference
+        // is not a session's, so routing on it after the fact would find no session and
+        // acknowledge a real confirmation as a stale one.
+        if (confirmation.kind() == PaymentProvider.Kind.REFUND) {
+            return confirmRefund.settle(providerName, confirmation);
         }
 
         PaymentSession session = sessions
@@ -114,7 +130,7 @@ public class ConfirmPayment {
     private Outcome apply(PaymentSession session, PaymentProvider.Confirmation confirmation) {
         Order order = orders.findOrThrow(session.orderId());
 
-        if (!confirmation.paid()) {
+        if (!confirmation.succeeded()) {
             session.failed();
             sessions.save(session);
             log.info("Payment failed orderId={} sessionId={}", order.id(), session.id());

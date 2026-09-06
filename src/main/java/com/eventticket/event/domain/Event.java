@@ -77,6 +77,17 @@ public class Event {
     private Instant publishedAt;
 
     /**
+     * The cancellation lives on the Event because there is at most one of them and it is a
+     * fact about the Event. The per-Order progress requirements/008 criterion 7 asks for is
+     * the refund rows, which are the record of the work rather than a second copy of it.
+     */
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    @Column(name = "cancel_reason")
+    private String cancelReason;
+
+    /**
      * Copied from the Venue at publish, alongside the seats. Stays a document because nothing
      * is ever ticketed against a stage or an aisle.
      */
@@ -259,6 +270,41 @@ public class Event {
     }
 
     /** requirements/003 criterion 12. Tickets already sold stay valid and scannable. */
+    /**
+     * requirements/008 criterion 6, and KB invariant 22. Cancelling is not closing sales: sales
+     * closing stops new Orders and leaves every Ticket good, cancelling voids all of them and
+     * gives the money back.
+     *
+     * <p>A Draft is refused rather than quietly cancelled. It has sold nothing and admits
+     * nobody, so there is nothing for a cancellation to undo, and an organizer who reached for
+     * this wanted to delete it.
+     */
+    public void cancel(String reason, Instant at) {
+        if (!isPublished()) {
+            throw new ApiException(ErrorCodes.EVENT_NOT_CANCELLABLE,
+                    "This event was never published, so there is nothing to cancel. Delete it instead.");
+        }
+        if (status == Status.CANCELLED) {
+            throw new ApiException(ErrorCodes.EVENT_NOT_CANCELLABLE,
+                    "This event has already been cancelled.");
+        }
+        this.status = Status.CANCELLED;
+        this.cancelledAt = at;
+        this.cancelReason = reason;
+    }
+
+    public boolean isCancelled() {
+        return status == Status.CANCELLED;
+    }
+
+    public Instant cancelledAt() {
+        return cancelledAt;
+    }
+
+    public String cancelReason() {
+        return cancelReason;
+    }
+
     public void closeSales() {
         if (status != Status.PUBLISHED) {
             throw new ApiException(ErrorCodes.EVENT_FIELD_FROZEN,

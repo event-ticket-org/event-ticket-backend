@@ -32,6 +32,7 @@ tags:
   - name: Checkout
   - name: Tickets
   - name: Admission
+  - name: Refunds
   - name: Webhooks
 
 security:
@@ -435,7 +436,7 @@ paths:
           application/json:
             schema:
               type: array
-              items: { $ref: '#/components/schemas/PricingTier' }
+              items: { $ref: '#/components/schemas/PricingTierInput' }
       responses:
         '4XX': { $ref: '#/components/responses/Error4xx' }
         '200':
@@ -479,6 +480,37 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Event' }
+
+  /events/{eventId}/orders:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    get:
+      tags: [Refunds]
+      summary: The Orders placed for an Event
+      description: |
+        The organizer's view, for an Owner or Manager. `GET /orders` is the buyer's own list
+        and answers a different question; neither substitutes for the other.
+
+        This is how a refund is reached. [008](../requirements/008-refunds-and-cancellation.md)
+        criterion 1 puts refunding in the hands of an Owner or Manager, and an Owner who cannot
+        find an Order cannot refund one. `refundRequired=true` narrows the list to the Orders
+        holding money the platform should not keep.
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/OrderStatus' }
+        - name: refundRequired
+          in: query
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderPage' }
 
   /public/events:
     get:
@@ -587,6 +619,13 @@ paths:
     get:
       tags: [Checkout]
       summary: Read an Order
+      description: |
+        Readable by the buyer, and by the Organization selling the Event - the buyer to see
+        what they bought, the Organization to answer a question about it at the door or to
+        open the Order it is about to refund.
+
+        Anyone else gets a 404 rather than a 403. Whether an Order exists is not a thing to
+        confirm to a stranger holding a guessed id.
       responses:
         '200':
           description: OK
@@ -653,6 +692,88 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Ticket' }
+
+  /orders/{orderId}/refunds:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Refunds]
+      summary: The refund attempts against an Order
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Refund' }
+    post:
+      tags: [Refunds]
+      summary: Refund a paid Order
+      description: |
+        Initiated by the Organization, never by the buyer. Like a payment, a refund is
+        confirmed by the provider and is never an instant boolean - it returns
+        `REFUND_PENDING` and settles later (ADR-0002).
+
+        Refused if any Ticket in the Order has been redeemed: somebody has already been let
+        in, and no refund can take that back.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundRequest' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '202':
+          description: Refund started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Refund' }
+        '409':
+          description: |
+            `ORDER_NOT_REFUNDABLE`: the Order is not paid, has already been refunded, or one
+            of its Tickets has been redeemed. The three are one refusal because they end in
+            the same place - there is nothing here to give back - and the message says which.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+
+  /events/{eventId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Refunds]
+      summary: Cancel an Event, voiding every Ticket and refunding every paid Order
+      description: |
+        A bulk operation that will partially fail, so it reports per-Order status rather than
+        succeeding or failing as a whole. Poll the same path with GET to watch it settle.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundRequest' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '202':
+          description: Cancellation started
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventCancellation' }
+        '409':
+          description: |
+            `EVENT_NOT_CANCELLABLE`: the Event was never published, or is already cancelled.
+            A Draft has sold nothing and admits nobody, so there is nothing for a cancellation
+            to undo - deleting it is the operation that was wanted.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    get:
+      tags: [Refunds]
+      summary: How a cancellation is going, per Order
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EventCancellation' }
 
   /webhooks/payments/{provider}:
     parameters:
@@ -802,6 +923,8 @@ components:
         - PUBLISH_PRECONDITION_FAILED
         - CAPACITY_BELOW_SOLD
         - ORDER_ALREADY_PAID
+        - ORDER_NOT_REFUNDABLE
+        - EVENT_NOT_CANCELLABLE
         - VENUE_IN_USE
         - DUPLICATE_SEAT_LABEL
         - RATE_LIMITED
@@ -936,6 +1059,30 @@ components:
 
     PricingTier:
       type: object
+      description: |
+        A Pricing Tier as it stands, which may be a name with no price yet.
+
+        Tier names come from a Seat Map, prices are set separately, and the gap between the
+        two is a real state rather than an error: a tier is named the moment a seat is drawn
+        into it, and priced whenever somebody gets round to it. Publishing is refused until
+        every tier in use has a price (requirements/003 criterion 3), so an editor has to be
+        able to see which ones are still missing - which is exactly what a null price says.
+      required: [name, price]
+      properties:
+        name: { type: string }
+        price:
+          description: Null while the tier is named on the Seat Map but not yet priced.
+          oneOf:
+            - $ref: '#/components/schemas/Money'
+            - type: 'null'
+
+    PricingTierInput:
+      type: object
+      description: |
+        Setting a price, where null means nothing. A separate schema from `PricingTier`
+        because the two directions genuinely differ: a response reports the unpriced state,
+        and a request that tried to send it would be asking to unprice a tier, which is not
+        an operation this API has.
       required: [name, price]
       properties:
         name: { type: string }
@@ -991,6 +1138,12 @@ components:
               type: array
               items: { $ref: '#/components/schemas/PricingTier' }
             soldCount: { type: integer }
+            refundRequiredCount:
+              type: integer
+              description: |
+                Orders on this Event holding money that should be given back. It sits on the
+                Event because that is where an organizer looks, and a flag nobody can find is
+                the same as no flag.
             notifyCount:
               type: integer
               description: Ticket holders notified by the request that produced this response
@@ -1054,7 +1207,10 @@ components:
 
     OrderStatus:
       type: string
-      enum: [AWAITING_PAYMENT, PAID, EXPIRED, CANCELLED]
+      description: |
+        `CANCELLED` is a buyer abandoning an unpaid Order; `REFUNDED` is money given back.
+        Collapsing the two would lose the distinction that matters most in a ledger.
+      enum: [AWAITING_PAYMENT, PAID, EXPIRED, CANCELLED, REFUNDED]
 
     Order:
       type: object
@@ -1072,6 +1228,22 @@ components:
           type: [string, 'null']
           format: date-time
           description: When the Seat Holds lapse. Null once the Order is paid.
+        buyerEmail:
+          type: string
+          format: email
+          description: |
+            Where the tickets went. On an organizer's list it is the person a refund is about
+            and who they will have to answer to; on a buyer's own Order it is their own
+            address.
+        refundRequired:
+          type: boolean
+          description: |
+            Money taken for seats that were not delivered: a payment confirmed after the Seat
+            Holds had already lapsed ([005](../requirements/005-payment.md) criterion 10).
+
+            Set by the system and cleared by a refund. Nothing acted on it in v1, which is a
+            state the platform could reach and not leave, and half the reason
+            [008](../requirements/008-refunds-and-cancellation.md) was brought forward.
         createdAt: { type: string, format: date-time }
 
     NextAction:
@@ -1097,6 +1269,65 @@ components:
         status: { type: string, enum: [AWAITING_PAYMENT, PAID, FAILED, EXPIRED] }
         nextAction: { $ref: '#/components/schemas/NextAction' }
         expiresAt: { type: string, format: date-time }
+
+    RefundStatus:
+      type: string
+      description: |
+        Never a boolean. A refund is confirmed by the provider, like a payment, and the
+        pending state is a real state somebody has to be able to see (ADR-0002).
+      enum: [REFUND_PENDING, REFUNDED, REFUND_FAILED]
+
+    RefundRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          maxLength: 500
+          description: |
+            Shown to the buyer in the email they receive. Required, because "your order was
+            refunded" with no reason generates the support request it was meant to avoid.
+
+    Refund:
+      type: object
+      required: [id, orderId, amount, status]
+      properties:
+        id: { type: string, format: uuid }
+        orderId: { type: string, format: uuid }
+        amount: { $ref: '#/components/schemas/Money' }
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        reason: { type: string }
+        failureReason:
+          type: [string, 'null']
+          description: Present when the status is REFUND_FAILED, so somebody can act on it.
+        createdAt: { type: string, format: date-time }
+        settledAt: { type: [string, 'null'], format: date-time }
+
+    OrderRefundState:
+      type: object
+      required: [orderId, status]
+      properties:
+        orderId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/RefundStatus' }
+        failureReason: { type: [string, 'null'] }
+
+    EventCancellation:
+      type: object
+      description: |
+        The progress of one cancellation. It exists because a bulk refund partially fails and
+        somebody has to see which Orders did - a single success or failure for the whole
+        operation would hide exactly the information needed to finish it by hand.
+      required: [eventId, startedAt, orders]
+      properties:
+        eventId: { type: string, format: uuid }
+        reason: { type: string }
+        startedAt: { type: string, format: date-time }
+        pending: { type: integer }
+        refunded: { type: integer }
+        failed: { type: integer }
+        orders:
+          type: array
+          items: { $ref: '#/components/schemas/OrderRefundState' }
 
     Ticket:
       type: object

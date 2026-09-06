@@ -1,7 +1,10 @@
 package com.eventticket.identity.support;
 
 import com.eventticket.shared.UserDirectory;
+import java.util.Collection;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Component;
 import com.eventticket.identity.domain.AppUser;
 import com.eventticket.identity.repository.AppUserRepository;
@@ -35,6 +38,12 @@ public class AppUserDirectory implements UserDirectory {
     @Override
     public String emailOf(UUID userId) {
         return users.findOrThrow(userId).email();
+    }
+
+    @Override
+    public Map<UUID, String> emailsOf(Collection<UUID> userIds) {
+        return users.findAllById(userIds).stream()
+                .collect(Collectors.toMap(AppUser::id, AppUser::email));
     }
 
     @Override

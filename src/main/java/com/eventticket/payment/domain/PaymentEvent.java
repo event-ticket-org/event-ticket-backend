@@ -36,6 +36,10 @@ public class PaymentEvent {
     @Column(name = "session_id")
     private UUID sessionId;
 
+    /** A delivery settles one flow or the other. Exactly one of these two is set. */
+    @Column(name = "refund_id")
+    private UUID refundId;
+
     @Column(name = "received_at", nullable = false)
     private Instant receivedAt = Instant.now();
 
@@ -45,5 +49,18 @@ public class PaymentEvent {
         this.provider = provider;
         this.providerEventId = providerEventId;
         this.sessionId = sessionId;
+    }
+
+    /**
+     * The same row for the other flow. One table, because idempotency is about the delivery
+     * and a provider numbers both flows from the same sequence - two tables would let one
+     * event id be processed once as a payment and again as a refund.
+     */
+    public static PaymentEvent forRefund(String provider, String providerEventId, UUID refundId) {
+        PaymentEvent event = new PaymentEvent();
+        event.provider = provider;
+        event.providerEventId = providerEventId;
+        event.refundId = refundId;
+        return event;
     }
 }

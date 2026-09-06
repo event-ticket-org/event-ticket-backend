@@ -33,6 +33,9 @@ public class AuditTrail {
     // requirements/005 criterion 9. Recorded rather than logged, because someone has to go
     // and give the money back, and a log line is not a work queue.
     public static final String ORDER_REFUND_REQUIRED = "ORDER_REFUND_REQUIRED";
+    public static final String ORDER_REFUND_STARTED = "ORDER_REFUND_STARTED";
+    public static final String ORDER_REFUNDED = "ORDER_REFUNDED";
+    public static final String EVENT_CANCELLED = "EVENT_CANCELLED";
 
     private final AuditEntryRepository entries;
 

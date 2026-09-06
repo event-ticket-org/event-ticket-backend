@@ -6,7 +6,6 @@ import com.eventticket.api.model.Money;
 import com.eventticket.api.model.NextAction;
 import com.eventticket.api.model.Order;
 import com.eventticket.api.model.OrderPage;
-import com.eventticket.api.model.OrderSeat;
 import com.eventticket.api.model.OrderStatus;
 import com.eventticket.api.model.PaymentSession;
 import com.eventticket.api.model.StartPaymentRequest;
@@ -51,19 +50,19 @@ public class CheckoutController implements CheckoutApi {
     @Override
     public ResponseEntity<Order> checkoutPost(CheckoutRequest request) {
         OrderDetail created = beginCheckout.begin(request.getEventId(), request.getSeatIds());
-        return ResponseEntity.status(HttpStatus.CREATED).body(toDto(created));
+        return ResponseEntity.status(HttpStatus.CREATED).body(OrderMapper.toDto(created));
     }
 
     @Override
     public ResponseEntity<Order> ordersOrderIdGet(UUID orderId) {
-        return ResponseEntity.ok(toDto(getOrder.get(orderId)));
+        return ResponseEntity.ok(OrderMapper.toDto(getOrder.get(orderId)));
     }
 
     @Override
     public ResponseEntity<OrderPage> ordersGet(Integer limit, String cursor) {
         var page = listOrders.list(limit, cursor);
         var dto = new OrderPage();
-        page.items().forEach(detail -> dto.addItemsItem(toDto(detail)));
+        page.items().forEach(detail -> dto.addItemsItem(OrderMapper.toDto(detail)));
         dto.setNextCursor(page.nextCursor());
         return ResponseEntity.ok(dto);
     }
@@ -81,32 +80,12 @@ public class CheckoutController implements CheckoutApi {
         return ResponseEntity.status(HttpStatus.CREATED).body(toDto(session));
     }
 
-    private static Order toDto(OrderDetail detail) {
-        var order = detail.order();
-        var dto = new Order(order.id(), order.eventId(),
-                OrderStatus.fromValue(order.status().name()), toDto(order.total()));
-        dto.setEventTitle(detail.eventTitle());
-        dto.setHoldExpiresAt(at(order.holdExpiresAt()));
-        dto.setCreatedAt(at(order.createdAt()));
-        detail.seats().forEach(seat -> dto.addSeatsItem(toDto(seat)));
-        return dto;
-    }
-
-    private static OrderSeat toDto(com.eventticket.checkout.domain.OrderSeat seat) {
-        var dto = new OrderSeat();
-        dto.setSeatId(seat.eventSeatId());
-        dto.setLabel(seat.label());
-        dto.setTierName(seat.tierName());
-        dto.setPrice(toDto(seat.price()));
-        return dto;
-    }
-
     private static PaymentSession toDto(com.eventticket.payment.domain.PaymentSession session) {
         var dto = new PaymentSession(session.id(), session.orderId(),
                 PaymentSession.StatusEnum.fromValue(session.status().name()),
                 toDto(session.nextAction()));
         dto.setProvider(session.provider());
-        dto.setExpiresAt(at(session.expiresAt()));
+        dto.setExpiresAt(OrderMapper.at(session.expiresAt()));
         return dto;
     }
 
@@ -118,11 +97,4 @@ public class CheckoutController implements CheckoutApi {
         return dto;
     }
 
-    private static Money toDto(com.eventticket.shared.money.Money money) {
-        return new Money(money.amount(), Money.CurrencyEnum.fromValue(money.currency().name()));
-    }
-
-    private static OffsetDateTime at(Instant instant) {
-        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
-    }
 }

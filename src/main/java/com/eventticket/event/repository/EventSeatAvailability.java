@@ -16,6 +16,10 @@ import org.springframework.stereotype.Repository;
  * widening that policy would be. And each of them resolves a race by locking, in one
  * statement, which is what KB invariant 5 means by "not a check in application code".
  *
+ * <p>{@code releaseSold} is the fourth and the odd one: it undoes a sale rather than a hold,
+ * and it is the only one that can decline to act - a seat goes back on sale only while the
+ * Event is still selling (requirements/008 criterion 5).
+ *
  * <p>Each returns the seats it actually changed, never a boolean. That difference is the whole
  * interface: {@code hold} returning fewer seats than were asked for is how requirements/004
  * criterion 6 knows which seats to name, and {@code sell} returning fewer is how
@@ -49,6 +53,16 @@ public class EventSeatAvailability {
     /** requirements/004 criterion 11: abandoning releases the seats at once, not at expiry. */
     public int release(UUID orderId) {
         Integer released = jdbc.queryForObject("select release_seats(?)", Integer.class, orderId);
+        return released == null ? 0 : released;
+    }
+
+    /**
+     * requirements/008 criterion 5: a refunded Order's seats go back on sale, if there is
+     * still a sale to go back into. Returns how many actually moved, which is zero for a
+     * cancelled or closed Event and is not a failure - there is simply nothing to sell.
+     */
+    public int releaseSold(UUID orderId) {
+        Integer released = jdbc.queryForObject("select release_sold_seats(?)", Integer.class, orderId);
         return released == null ? 0 : released;
     }
 

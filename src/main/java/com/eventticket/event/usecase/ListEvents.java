@@ -18,6 +18,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
@@ -77,10 +78,20 @@ public class ListEvents {
                 .findByIdIn(visible.stream().filter(e -> !e.isPublished()).map(Event::venueId).distinct().toList())
                 .stream().collect(Collectors.toMap(Venue::id, Venue::seatMap));
 
+        Map<UUID, EventRepository.EventCounts> countsByEvent = events
+                .countsFor(visible.stream().map(Event::id).toList())
+                .stream().collect(Collectors.toMap(
+                        EventRepository.EventCounts::getEventId, Function.identity()));
+
         List<EventDetail> items = visible.stream()
-                .map(event -> EventDetail.of(event, EventPricing.of(event,
-                        mapsByVenue.get(event.venueId()),
-                        tiersByEvent.getOrDefault(event.id(), List.of()))))
+                .map(event -> {
+                    EventDetail detail = EventDetail.of(event, EventPricing.of(event,
+                            mapsByVenue.get(event.venueId()),
+                            tiersByEvent.getOrDefault(event.id(), List.of())));
+                    var counts = countsByEvent.get(event.id());
+                    return counts == null ? detail
+                            : detail.withCounts(counts.getSold(), counts.getRefundRequired());
+                })
                 .toList();
 
         Event last = visible.get(visible.size() - 1);
