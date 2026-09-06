@@ -250,6 +250,27 @@ code is that plus a MAC under a key from the environment, so a leaked database i
 working tickets (nfr.md). Log the count, not the codes — a code arrives in a scan request body,
 which makes the request log the easiest place to leak every code presented at a door.
 
+## Money moves on a callback, both ways
+
+Neither half of the money can be completed from a browser, and that is the design rather than a
+gap: an Order becomes paid only on a provider confirmation (requirements/005 criterion 3) and a
+refund settles only on one (requirements/008 criterion 2). So on a laptop both leave somebody
+waiting for a webhook that nobody is going to send.
+
+`scripts/confirm-payment.sh` and `scripts/confirm-refund.sh` are what send it. They post a real
+signed webhook to the real endpoint rather than reaching past the API to set a status, because a
+shortcut that did would stop exercising the parts most likely to be wrong - the signature over
+raw bytes, idempotency, and the tenant a webhook has to adopt before it can touch a row.
+
+```bash
+scripts/confirm-payment.sh <order-id>                    # and --fail, --twice
+scripts/confirm-refund.sh  <order-id>                    # and --fail "why"
+scripts/confirm-refund.sh  --event <event-id>            # settle a whole cancellation
+```
+
+A refund refused before any provider was asked has no `provider_ref`, so the scripts skip it -
+that is what makes it a refusal rather than a failure, and there is nothing to confirm.
+
 ## The door
 
 Redemption is one conditional `UPDATE` whose row count is the answer - 1 admits, 0 means someone
