@@ -326,8 +326,21 @@ class RefundsAndCancellationTest extends ApiTest {
         // The refundable one was still attempted: one failure did not roll the other back.
         assertThat(jdbc.queryForObject("select count(*) from refund where order_id = ?",
                 Long.class, refundable.getId())).isEqualTo(1L);
-        assertThat(jdbc.queryForObject("select count(*) from refund where order_id = ?",
-                Long.class, used.getId())).isZero();
+
+        // criterion 7, and the part that is easy to get wrong: the refused Order is *reported*
+        // as failed, with the reason, rather than left looking like one still in progress.
+        // Without this it read "still going" for ever on the screen somebody watches to find
+        // out what they have to finish by hand.
+        assertThat(started.getOrders())
+                .filteredOn(state -> state.getOrderId().equals(used.getId()))
+                .singleElement()
+                .satisfies(state -> {
+                    assertThat(state.getStatus()).isEqualTo(RefundStatus.REFUND_FAILED);
+                    assertThat(state.getFailureReason()).contains("already been used at the door");
+                });
+        assertThat(started.getFailed()).isEqualTo(1);
+        // And the other one is genuinely still going: asked for, and with the provider.
+        assertThat(started.getPending()).isEqualTo(1);
     }
 
     @Test

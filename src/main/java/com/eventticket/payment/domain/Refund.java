@@ -46,8 +46,13 @@ public class Refund {
     @Column(nullable = false)
     private String provider;
 
-    /** The provider's handle for the reversal. A callback names this, never our id. */
-    @Column(name = "provider_ref", nullable = false)
+    /**
+     * The provider's handle for the reversal. A callback names this, never our id.
+     *
+     * <p>Null on a refund that was refused before any provider was asked - see
+     * {@link #refused}. There is no handle for a request nobody made.
+     */
+    @Column(name = "provider_ref")
     private String providerRef;
 
     @Column(nullable = false)
@@ -84,6 +89,23 @@ public class Refund {
         this.amount = amount.amount();
         this.currency = amount.currency().name();
         this.reason = reason;
+    }
+
+    /**
+     * A refund that was refused before a provider was involved, recorded so that somebody can
+     * see it (requirements/008 criterion 7).
+     *
+     * <p>Only the bulk path needs this. A refund asked for through the API is refused with a
+     * 409 and a message, and the caller is right there reading it; a cancellation refunds
+     * hundreds of Orders with nobody watching each one, and a refusal that went only to the
+     * log would leave that Order reported as "still going" for ever.
+     */
+    public static Refund refused(UUID orderId, UUID organizationId, UUID buyerUserId,
+                                 String provider, Money amount, String reason, String cause) {
+        Refund refund = new Refund(orderId, organizationId, buyerUserId, provider, null,
+                amount, reason);
+        refund.failed(cause);
+        return refund;
     }
 
     public UUID id() {
