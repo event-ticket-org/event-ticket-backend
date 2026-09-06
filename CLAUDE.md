@@ -284,6 +284,23 @@ call that leaves it null. Express an absent filter as its widest value instead o
 edge of time for a bound or a cursor (`PageCursor.FIRST_ASCENDING`), every member of the enum
 for a status. No casts, no null tests, and the plan is better.
 
+**A text filter is `%` when absent, not a null test.** The same idiom as the date bounds, one
+step further: an absent search matches everything, so there is no branch and no second query
+shape to keep correct. The wildcards in what the visitor typed are escaped first - they are the
+pattern's syntax, not theirs, and a search for "50%" that returned the whole listing reads as a
+broken filter rather than as a character having meant something.
+
+**Fold both sides of a comparison with the same function, in the database.** Searching is
+accent-insensitive because this market writes with diacritics and types without them.
+`lower(unaccent(title)) like lower(unaccent(:pattern))` - doing either side in Java instead
+splits the folding across two implementations that disagree: Java's normalizer strips combining
+marks and leaves `Đ` alone, Postgres `unaccent` folds it to `D`. The first version of this
+unaccented only the column, so typing a title exactly as written found nothing.
+
+`unaccent` is a trusted extension from Postgres 13, so a plain database owner can create it and
+the deployed application needs no superuser (verified against a `NOSUPERUSER` role, because the
+connection user is a superuser in development and test and would have proved nothing).
+
 Listings page by keyset, never by offset — an offset shifts under inserts, so a buyer scrolling
 while someone publishes sees rows twice or not at all. Fetch `limit + 1` to learn whether
 another page exists without counting the table.

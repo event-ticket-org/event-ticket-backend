@@ -4,11 +4,15 @@ import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PublicEventView;
 import com.eventticket.event.repository.EventRepository;
+import com.eventticket.event.repository.EventSeatRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.repository.SeatsOnSale;
 import com.eventticket.organization.repository.OrganizationRepository;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.venue.domain.Venue;
 import com.eventticket.venue.repository.VenueRepository;
+import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,13 +31,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class GetPublicEvent {
 
     private final EventRepository events;
+    private final EventSeatRepository seats;
     private final PricingTierRepository tiers;
     private final VenueRepository venues;
     private final OrganizationRepository organizations;
 
-    public GetPublicEvent(EventRepository events, PricingTierRepository tiers,
-                   VenueRepository venues, OrganizationRepository organizations) {
+    public GetPublicEvent(EventRepository events, EventSeatRepository seats,
+                   PricingTierRepository tiers, VenueRepository venues,
+                   OrganizationRepository organizations) {
         this.events = events;
+        this.seats = seats;
         this.tiers = tiers;
         this.venues = venues;
         this.organizations = organizations;
@@ -49,7 +56,13 @@ public class GetPublicEvent {
         Venue venue = venues.findOrThrow(event.venueId());
         String organizationName = organizations.findOrThrow(event.organizationId()).name();
 
+        // The same count the listing reports, from the same query, so the two pages cannot
+        // disagree about an event a buyer is looking at on both.
+        long available = SeatsOnSale.of(
+                SeatsOnSale.asMap(seats.countOnSale(List.of(eventId), Instant.now())), eventId);
+
         return new PublicEventView(event, organizationName, venue.name(), venue.city(),
-                venue.timezone(), EventPricing.of(event, null, tiers.findByEventId(eventId)));
+                venue.timezone(), EventPricing.of(event, null, tiers.findByEventId(eventId)),
+                available);
     }
 }

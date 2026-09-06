@@ -5,7 +5,9 @@ import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PricingTier;
 import com.eventticket.event.domain.PublicEventView;
 import com.eventticket.event.repository.EventRepository;
+import com.eventticket.event.repository.EventSeatRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.repository.SeatsOnSale;
 import com.eventticket.event.support.PageCursor;
 import com.eventticket.organization.domain.Organization;
 import com.eventticket.organization.repository.OrganizationRepository;
@@ -33,38 +35,43 @@ import org.springframework.transaction.annotation.Transactional;
 public class ListPublicEvents {
 
     private final EventRepository events;
+    private final EventSeatRepository seats;
     private final PricingTierRepository tiers;
     private final VenueRepository venues;
     private final OrganizationRepository organizations;
 
-    public ListPublicEvents(EventRepository events, PricingTierRepository tiers,
-                     VenueRepository venues, OrganizationRepository organizations) {
+    public ListPublicEvents(EventRepository events, EventSeatRepository seats,
+                     PricingTierRepository tiers, VenueRepository venues,
+                     OrganizationRepository organizations) {
         this.events = events;
+        this.seats = seats;
         this.tiers = tiers;
         this.venues = venues;
         this.organizations = organizations;
     }
 
     @Transactional(readOnly = true)
-    public Paged<PublicEventView> list(String city, Instant startsAfter, Instant startsBefore,
-                                       int limit, String cursor) {
+    public Paged<PublicEventView> list(String query, String city, Instant startsAfter,
+                                       Instant startsBefore, int limit, String cursor) {
         PageCursor from = PageCursor.decode(cursor, PageCursor.FIRST_ASCENDING);
         PageRequest page = PageRequest.ofSize(limit + 1);
         Instant now = Instant.now();
         Instant after = PageCursor.orBeginning(startsAfter);
         Instant before = PageCursor.orEndOfTime(startsBefore);
+        String title = titlePattern(query);
 
         List<Event> found;
         if (city == null || city.isBlank()) {
             found = events.findPublicPage(now, Event.Status.PUBLISHED,
-                    Organization.Status.APPROVED, after, before, from.at(), from.id(), page);
+                    Organization.Status.APPROVED, after, before, title,
+                    from.at(), from.id(), page);
         } else {
             List<UUID> venueIds = venues.findIdsByCity(city);
             // An "in ()" with nothing in it is not a query worth sending, and on some engines
             // not valid SQL either.
             found = venueIds.isEmpty() ? List.of()
                     : events.findPublicPageAtVenues(now, Event.Status.PUBLISHED,
-                            Organization.Status.APPROVED, venueIds, after, before,
+                            Organization.Status.APPROVED, venueIds, after, before, title,
                             from.at(), from.id(), page);
         }
 
@@ -83,15 +90,44 @@ public class ListPublicEvents {
         Map<UUID, List<PricingTier>> tiersByEvent = tiers
                 .findByEventIdIn(visible.stream().map(Event::id).toList())
                 .stream().collect(Collectors.groupingBy(PricingTier::eventId));
+        Map<UUID, Long> onSale = SeatsOnSale.asMap(
+                seats.countOnSale(visible.stream().map(Event::id).toList(), now));
 
         List<PublicEventView> items = visible.stream().map(event -> {
             Venue venue = venuesById.get(event.venueId());
             return new PublicEventView(event, organizationNames.get(event.organizationId()),
                     venue.name(), venue.city(), venue.timezone(),
-                    EventPricing.of(event, null, tiersByEvent.getOrDefault(event.id(), List.of())));
+                    EventPricing.of(event, null, tiersByEvent.getOrDefault(event.id(), List.of())),
+                    SeatsOnSale.of(onSale, event.id()));
         }).toList();
 
         Event last = visible.get(visible.size() - 1);
         return new Paged<>(items, more ? PageCursor.encode(last.startsAt(), last.id()) : null);
+    }
+
+    /**
+     * The text filter as a LIKE pattern, or {@code %} when there is nothing to filter by.
+     *
+     * <p>An absent filter is the widest value rather than a null and a second query shape -
+     * the same idiom the date bounds use, and for the same reason (EventRepository).
+     *
+     * <p>The wildcards are escaped because they are ours and not the caller's. Somebody
+     * searching for "50%" otherwise matches every event on the listing, which reads as the
+     * filter being broken rather than as a character having meant something.
+     *
+     * <p>Nothing is folded here. The query does {@code lower(unaccent(...))} to both the title
+     * and this pattern, which is the only way the two are guaranteed to agree - Java's
+     * normalizer strips combining marks and would leave Đ alone, so "dem" would find "Đêm" in
+     * Postgres and not in a unit test, or the reverse. One folding, in one place.
+     */
+    private static String titlePattern(String query) {
+        if (query == null || query.isBlank()) {
+            return "%";
+        }
+        String escaped = query.strip()
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        return "%" + escaped + "%";
     }
 }

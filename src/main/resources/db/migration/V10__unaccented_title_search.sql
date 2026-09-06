@@ -1,0 +1,24 @@
+-- requirements/009 criterion 4: the public listing filters by a text query on the title.
+--
+-- `unaccent` rather than a comparison on the raw text, because the market this is built for
+-- writes with diacritics and searches without them. Somebody looking for "Đêm Nhạc Cuối Năm"
+-- types "dem nhac" - on a phone keyboard, in a hurry - and a filter that only matched the
+-- accented form would answer "nothing matches that" for an event that is right there.
+--
+-- Verified against this database rather than assumed: unaccent folds the whole Vietnamese
+-- range, including Đ to D, which is the one worth checking because it is a distinct letter
+-- rather than a diacritic and a folding table could reasonably leave it alone.
+--
+-- `unaccent` is a trusted extension from Postgres 13, so the database owner may create it and
+-- this needs no superuser - which matters, because the deployed application deliberately does
+-- not run as one (ADR-0002).
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- No index here, deliberately.
+--
+-- `unaccent` is STABLE rather than IMMUTABLE, so it cannot be used in an index expression
+-- without wrapping it in an IMMUTABLE function of our own - and that wrapper is a lie the
+-- planner believes, which breaks if the extension's rules are ever updated. nfr.md describes
+-- one instance and a modest catalogue; a sequential scan over listed, published, future
+-- Events is a scan over the small end of this table, and the filters on status and start time
+-- are what actually narrow it. Revisit with a measurement, not with a hunch.

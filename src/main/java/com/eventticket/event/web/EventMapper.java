@@ -53,7 +53,8 @@ final class EventMapper {
     static PublicEvent toPublicDto(PublicEventView view) {
         Event event = view.event();
         var dto = new PublicEvent(event.id(), event.title(), view.organizationName(),
-                view.venueName(), view.city(), at(event.startsAt()), view.timezone());
+                view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
+                (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
         dto.setDescription(event.description());
@@ -68,7 +69,8 @@ final class EventMapper {
     static PublicEventSummary toSummaryDto(PublicEventView view) {
         Event event = view.event();
         var dto = new PublicEventSummary(event.id(), event.title(), view.organizationName(),
-                view.venueName(), view.city(), at(event.startsAt()), view.timezone());
+                view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
+                (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
         view.pricing().cheapest().ifPresent(price -> dto.setPriceFrom(toDto(price)));

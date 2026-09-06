@@ -591,7 +591,17 @@ paths:
       description: |
         Published, listed Events of approved Organizations that have not yet started, ordered
         by start time. No ranking, relevance or personalization.
+
+        A sold-out Event still appears. Hiding it would make the listing disagree with what is
+        on, and somebody who missed it is better told so than left wondering.
       parameters:
+        - name: q
+          in: query
+          description: |
+            Filters by title. A filter and not a search ranking: matching Events are still
+            ordered by start time, which is what keeps requirements/009 criterion 5 true.
+            Matching is case-insensitive and accent-insensitive, so `hanoi` finds `Hà Nội`.
+          schema: { type: string, maxLength: 200 }
         - name: city
           in: query
           schema: { type: string }
@@ -1282,7 +1292,8 @@ components:
 
     PublicEventSummary:
       type: object
-      required: [id, title, organizationName, venueName, city, startsAt, timezone]
+      required: [id, title, organizationName, venueName, city, startsAt, timezone,
+                 seatsAvailable]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -1294,6 +1305,18 @@ components:
         coverImageUrl: { type: [string, 'null'], format: uri }
         coverImageAlt: { type: [string, 'null'] }
         priceFrom: { $ref: '#/components/schemas/Money' }
+        seatsAvailable:
+          type: integer
+          minimum: 0
+          description: |
+            Seats still on sale. Zero means sold out, which is the one thing here that changes
+            a decision before anybody taps.
+
+            A count rather than a flag because it publishes nothing new: the Event's seat map
+            is already public and anybody may count it. What this saves is a request per Event,
+            and it lets a client say how few are left without a second contract change. Held
+            seats count as unavailable - a hold expires, but a buyer told "one left" who then
+            finds none has been misled by a technicality.
 
     PublicEvent:
       allOf:
