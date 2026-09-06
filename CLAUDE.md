@@ -286,6 +286,33 @@ code is that plus a MAC under a key from the environment, so a leaked database i
 working tickets (nfr.md). Log the count, not the codes — a code arrives in a scan request body,
 which makes the request log the easiest place to leak every code presented at a door.
 
+## What a second payment provider changed
+
+Stripe is the first provider whose flow differs from the fake's, and ADR-0002 predicted that
+adding one would find things. It found two, both in code that looked finished:
+
+**`verify` answers `Optional`, because most deliveries are about nothing.** A single Stripe
+payment produces a dozen events and two of them matter. The port could only say "here is a
+confirmation", so every other event had to be dressed up as a confirmation of nothing - and
+arrived at `ConfirmPayment` indistinguishable from a delivery for a session nobody has, which
+is a genuine warning. Ten warnings per sale bury the one worth reading. Empty now means
+authentic and not actionable; the fake never returns it, which is why nothing noticed.
+
+**Stripe refunds a PaymentIntent, and a Payment Session holds a Checkout Session.** So
+`refund` fetches the session to find the charge. That extra call is the price of the port being
+right: a provider's reference is whatever it handed back at the start, and requiring every
+provider to return the same *kind* of handle would put Stripe's internals into a port that also
+has to fit a bank transfer.
+
+**Amounts are passed through untouched.** Stripe takes the currency's smallest unit and VND has
+no minor unit, so the dong is that unit - confirmed against the live API, which echoed
+`amount_total: 500000` for two 250,000 seats. A multiplication here would charge a hundred
+times the price and look plausible in every log.
+
+**The Stripe bean is conditional on its key.** No key, no provider, and `StartPayment` says
+there is no provider by that name - which is true. The suite and a fresh clone need no account
+and no network.
+
 ## Money moves on a callback, both ways
 
 Neither half of the money can be completed from a browser, and that is the design rather than a

@@ -50,7 +50,11 @@ public class ConfirmPayment {
     private static final Logger log = LoggerFactory.getLogger(ConfirmPayment.class);
 
     /** What the caller should tell the provider. Every one of these is an acknowledgement. */
-    public enum Outcome { APPLIED, DUPLICATE, UNKNOWN_SESSION, ALREADY_SETTLED, FAILED, HOLDS_LAPSED }
+    public enum Outcome {
+        APPLIED, DUPLICATE, UNKNOWN_SESSION, ALREADY_SETTLED, FAILED, HOLDS_LAPSED,
+        /** Genuine, and about something this system has no opinion on. */
+        NOT_ACTIONABLE,
+    }
 
     private final PaymentSessionRepository sessions;
     private final PaymentEventRepository deliveries;
@@ -89,7 +93,14 @@ public class ConfirmPayment {
         }
 
         // criterion 7. Before anything is read out of the payload, let alone acted on.
-        PaymentProvider.Confirmation confirmation = provider.verify(rawBody, headers);
+        PaymentProvider.Confirmation confirmation = provider.verify(rawBody, headers).orElse(null);
+        if (confirmation == null) {
+            // Authentic, and about something this system does not act on. Distinct from a
+            // confirmation for a session nobody has, which is a warning worth reading: a real
+            // provider sends many of these per payment and treating them alike would bury the
+            // one that matters under the ones that do not.
+            return Outcome.NOT_ACTIONABLE;
+        }
 
         if (deliveries.existsByProviderAndProviderEventId(providerName, confirmation.providerEventId())) {
             log.info("Ignoring repeat webhook provider={} eventId={}",

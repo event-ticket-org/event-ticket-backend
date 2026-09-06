@@ -3,6 +3,7 @@ package com.eventticket.payment.domain;
 import com.eventticket.shared.money.Money;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -39,8 +40,17 @@ public interface PaymentProvider {
      * requirements/005 criterion 7: authenticity is verified before the payload is trusted.
      * Throws rather than returning a failure, because a caller that could accidentally use an
      * unverified confirmation is the thing this signature exists to prevent.
+     *
+     * <p>Empty means the delivery was genuine and says nothing this system acts on. Real
+     * providers send far more than the two outcomes here: a Stripe payment produces a dozen
+     * events, of which two matter. Without a way to say so, every one of the others has to be
+     * dressed up as a confirmation of something and is then indistinguishable from a stale
+     * delivery - which is a warning per event, and a log nobody reads by the second sale.
+     *
+     * <p>The fake never returns empty, which is exactly why this was missing until a second
+     * provider existed (KB ADR-0002).
      */
-    public Confirmation verify(byte[] rawBody, Map<String, String> headers);
+    public Optional<Confirmation> verify(byte[] rawBody, Map<String, String> headers);
 
     public record Attempt(UUID orderId, Money total, Instant holdExpiresAt, String buyerEmail) {}
 

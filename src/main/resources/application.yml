@@ -73,6 +73,15 @@ app:
   payment:
     fake:
       secret: ${FAKE_PAYMENT_SECRET:fake-provider-shared-secret}
+    stripe:
+      # No default, and the provider bean is conditional on it. Unset means there is no STRIPE
+      # provider at all rather than one that fails on first use - which is what keeps a fresh
+      # clone and the whole test suite working with no account and no network.
+      #
+      # The webhook secret comes from `stripe listen`, not from the dashboard: Stripe cannot
+      # reach a laptop, so the CLI receives the event and forwards it, signing with its own.
+      secret-key: ${STRIPE_SECRET_KEY:}
+      webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
 
 logging:
   pattern:

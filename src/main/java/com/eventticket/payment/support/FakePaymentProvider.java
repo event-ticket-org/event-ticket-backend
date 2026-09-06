@@ -82,7 +82,7 @@ public class FakePaymentProvider implements PaymentProvider {
     }
 
     @Override
-    public Confirmation verify(byte[] rawBody, Map<String, String> headers) {
+    public java.util.Optional<Confirmation> verify(byte[] rawBody, Map<String, String> headers) {
         String presented = headers.get(SIGNATURE_HEADER);
         if (presented == null || !MessageDigest.isEqual(sign(rawBody), decode(presented))) {
             throw new ApiException(ErrorCodes.NOT_AUTHENTICATED,
@@ -95,12 +95,12 @@ public class FakePaymentProvider implements PaymentProvider {
             // a payment. The status carries the kind because a provider's event type is what
             // carries it, and a separate field would be one this fake invented.
             boolean isRefund = status.startsWith("REFUND");
-            return new Confirmation(
+            return java.util.Optional.of(new Confirmation(
                     isRefund ? Kind.REFUND : Kind.PAYMENT,
                     body.path("eventId").asString(),
                     body.path("providerRef").asString(),
                     isRefund ? "REFUNDED".equals(status) : "PAID".equals(status),
-                    body.path("failureReason").asString(null));
+                    body.path("failureReason").asString(null)));
         } catch (tools.jackson.core.JacksonException e) {
             throw new ApiException(ErrorCodes.VALIDATION_FAILED, "The webhook body was not readable.");
         }
