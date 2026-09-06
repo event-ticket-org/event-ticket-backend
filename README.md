@@ -37,6 +37,26 @@ Configuration is the only way to become one - no endpoint grants it, deliberatel
 endpoint it unlocks decides who may sell tickets at all. An address listed here is promoted
 when it registers, and at startup if it registered already, so either order works.
 
+### Completing a payment locally
+
+An Order becomes paid only when the provider confirms it, and the buyer returning to the site
+never confirms one (requirements/005 criterion 3). That is deliberate, and it means a purchase
+started in a browser on a laptop has nothing to wait for — for ever.
+
+```bash
+scripts/confirm-payment.sh <order-id>            # confirm the latest attempt
+scripts/confirm-payment.sh <order-id> --fail     # tell it the payment failed
+scripts/confirm-payment.sh <order-id> --twice    # deliver the same webhook twice
+```
+
+It sends a real webhook: the same path, the same body, and a real HMAC over the raw bytes,
+which `FakePaymentProvider` verifies before the payload is trusted. Nothing in it reaches past
+the API to mark an Order paid — a shortcut that did would stop exercising the parts most worth
+exercising: idempotency, the tenant a webhook has to adopt, and the seats it sells.
+
+`--twice` sends one delivery id twice, which is criterion 4 in one command: two 204s, one paid
+Order, one set of Tickets.
+
 ## How the code is organised
 
 Package-by-feature, and **one class per use case** — `PublishEvent`, `CreateSeatHold`,
