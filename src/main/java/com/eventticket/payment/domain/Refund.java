@@ -164,6 +164,15 @@ public class Refund {
         return status != Status.REFUND_PENDING;
     }
 
+    /**
+     * Settled, and settled as having worked - which is the state a provider can take back
+     * (requirements/008 criterion 11). A failure arriving for a refund that already failed is
+     * the ordinary re-delivery and changes nothing.
+     */
+    public boolean isRefunded() {
+        return status == Status.REFUNDED;
+    }
+
     public void refunded() {
         this.status = Status.REFUNDED;
         this.settledAt = Instant.now();

@@ -179,6 +179,21 @@ public class Order {
     }
 
     /**
+     * requirements/008 criterion 11. A refund the provider settled and then reversed leaves
+     * this Order exactly where a late payment leaves one: holding money for seats nobody got.
+     * That is what {@code refundRequired} already means, which is why this sets the flag it
+     * has rather than inventing a second one.
+     *
+     * <p>The status is deliberately left as REFUNDED. A refund <em>was</em> attempted and
+     * <em>was</em> reported settled; that happened, and rewriting it to PAID would erase the
+     * only clue to why a buyer is holding an email saying they were refunded. What makes the
+     * Order actionable again is the flag, which {@code requireRefundable} now reads.
+     */
+    public void refundWasReversed() {
+        this.refundRequired = true;
+    }
+
+    /**
      * requirements/008 criteria 1 and 2. Refusing here is the whole of what "refundable"
      * means, and the interesting case is the one that is not PAID: an Order whose payment
      * landed after its holds lapsed is EXPIRED and is holding money anyway. Requiring PAID
@@ -189,7 +204,11 @@ public class Order {
      * dependency is the rule. {@code RefundOrder} makes that check.
      */
     public void requireRefundable() {
-        if (status == Status.REFUNDED) {
+        // Refunded and still holding the money is the one case where "already refunded" is
+        // not an answer: a provider settled and then took it back (requirements/008 criterion
+        // 11), so the flag is set and a second attempt is the entire point of setting it. A
+        // flag somebody can see and cannot act on is the failure criterion 10 warns about.
+        if (status == Status.REFUNDED && !refundRequired) {
             throw new ApiException(ErrorCodes.ORDER_NOT_REFUNDABLE,
                     "This order has already been refunded.");
         }

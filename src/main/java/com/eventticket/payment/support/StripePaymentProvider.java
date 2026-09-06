@@ -199,7 +199,12 @@ public class StripePaymentProvider implements PaymentProvider {
             case "checkout.session.expired", "checkout.session.async_payment_failed" ->
                     Optional.of(new Confirmation(Kind.PAYMENT, event.getId(), sessionIdOf(event),
                             false, "The payment was not completed."));
-            case "refund.created", "refund.updated", "charge.refund.updated" -> refundOf(event);
+            // `refund.failed` is the one that was missing, and the one that means it. Stripe
+            // answers a doomed refund with created/updated/charge.refund.updated all saying
+            // succeeded, and only then failed - so the event named after the outcome is the
+            // event that carries the truth (requirements/008 criterion 11).
+            case "refund.created", "refund.updated", "refund.failed", "charge.refund.updated" ->
+                    refundOf(event);
             // Genuine, and about something this system has no opinion on. A single payment
             // produces a dozen of these; they are acknowledged and go no further.
             default -> {

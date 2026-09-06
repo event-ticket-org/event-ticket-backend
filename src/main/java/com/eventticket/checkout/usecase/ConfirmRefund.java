@@ -72,6 +72,18 @@ public class ConfirmRefund {
             return ConfirmPayment.Outcome.UNKNOWN_SESSION;
         }
         if (refund.isSettled()) {
+            // A failure arriving for a refund that already succeeded is not a duplicate. It is
+            // the provider taking a settlement back (requirements/008 criterion 11), and this
+            // is the line the money fell through: Stripe reports a doomed refund as succeeded
+            // three times before saying failed, and every one of those later events was being
+            // discarded here as a re-delivery.
+            if (!confirmation.succeeded() && refund.isRefunded()) {
+                tenant.adopt(refund.buyerUserId(), refund.organizationId());
+                ConfirmPayment.Outcome reversed = reverse(refund, confirmation);
+                deliveries.save(PaymentEvent.forRefund(providerName,
+                        confirmation.providerEventId(), refund.id()));
+                return reversed;
+            }
             return ConfirmPayment.Outcome.ALREADY_SETTLED;
         }
 
@@ -113,6 +125,37 @@ public class ConfirmRefund {
         log.info("Refund settled orderId={} refundId={} amount={} seatsBackOnSale={}",
                 order.id(), refund.id(), refund.amount().amount(), freed);
         return ConfirmPayment.Outcome.APPLIED;
+    }
+
+    /**
+     * requirements/008 criterion 11: what to do when the money comes back out.
+     *
+     * <p>Both halves, because they answer different questions. The Refund records what actually
+     * happened - it says REFUND_FAILED with the provider's reason, which is the only honest
+     * account of where the money is. The Order is flagged, because a record nobody is looking
+     * at changes nothing and by this point somebody has to look: the buyer has an email saying
+     * they were refunded and it is not true.
+     *
+     * <p>The seats are left on sale. They were released when the refund settled and may have
+     * been sold since; pulling them back would take a seat from a second buyer to fix the
+     * first one's money, which is the wrong trade. The Tickets stay void for the same reason
+     * they were voided in the first place - nobody is getting in on this Order.
+     */
+    private ConfirmPayment.Outcome reverse(Refund refund, PaymentProvider.Confirmation confirmation) {
+        Order order = orders.findOrThrow(refund.orderId());
+        String cause = confirmation.failureReason() == null
+                ? "The provider reversed a refund it had reported as settled."
+                : confirmation.failureReason();
+
+        refund.failed(cause);
+        refunds.save(refund);
+        order.refundWasReversed();
+        orders.save(order);
+
+        audit.record(order.organizationId(), AuditTrail.ORDER_REFUND_REVERSED, order.id().toString());
+        log.warn("Refund reversed after settling orderId={} refundId={} cause={}",
+                order.id(), refund.id(), cause);
+        return ConfirmPayment.Outcome.FAILED;
     }
 
     /**
