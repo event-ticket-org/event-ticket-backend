@@ -74,6 +74,20 @@
 		</dependency>
 
 		<!--
+			Stripe's own SDK rather than four HTTP calls by hand, for one reason: webhook
+			signature verification. `Webhook.constructEvent` implements a scheme with a
+			timestamp tolerance and more than one accepted signature per delivery, and that is
+			the kind of code that is either exactly right or completely broken. The S3 upload
+			policy in `shared/storage` is written out by hand only because the AWS SDK has no
+			support for it; here support exists, so use it.
+		-->
+		<dependency>
+			<groupId>com.stripe</groupId>
+			<artifactId>stripe-java</artifactId>
+			<version>29.1.0</version>
+		</dependency>
+
+		<!--
 			Object storage for Event cover images (ADR-0006). The SDK, not a Spring starter:
 			one bucket, four operations, and a starter would bring an auto-configuration whose
 			opinions we would then have to override for MinIO.
