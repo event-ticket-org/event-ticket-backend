@@ -26,6 +26,7 @@ import java.util.UUID;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 
@@ -40,6 +41,9 @@ import org.springframework.http.HttpStatus;
 class CoverImageUploadTest extends ApiTest {
 
     private static final HttpClient DIRECT = HttpClient.newHttpClient();
+
+    @Value("${app.storage.upload-base-url}")
+    private String browserFacingStore;
 
     @Test
     @DisplayName("an image is uploaded straight to storage and becomes the event's cover")
@@ -63,6 +67,28 @@ class CoverImageUploadTest extends ApiTest {
 
         // Served, not merely recorded: the URL in the response is one a browser can fetch.
         assertThat(fetch(withCover.getCoverImageUrl())).isEqualTo(png());
+    }
+
+    /**
+     * The form goes to the address a browser can reach, which is not the one this application
+     * uses. They are the same string on a laptop and stop being it the moment the backend runs
+     * in a container, where {@code endpoint} is a name that resolves on the container network
+     * and nowhere else - and an upload posted there fails at DNS, in the browser, for a reason
+     * no server log mentions.
+     */
+    @Test
+    @DisplayName("the upload goes to the browser's address for the store, and still verifies")
+    void theFormPointsAtTheBrowserFacingAddress() {
+        TokenPair manager = approvedManager();
+        Event event = draftEvent(manager);
+
+        CoverUpload upload = beginUpload(manager, event.getId()).getBody();
+
+        assertThat(upload.getUrl().toString()).startsWith(browserFacingStore);
+        // And the signature survives the change of host, which is the half worth proving:
+        // it is computed over the policy document, so it is valid at any address that
+        // reaches the same bucket.
+        assertThat(uploadTo(upload, png(), "cover.png")).isBetween(200, 299);
     }
 
     @Test

@@ -2,9 +2,12 @@ spring:
   application:
     name: event-ticket-backend
   datasource:
-    url: jdbc:postgresql://localhost:5432/eventticket
-    username: eventticket
-    password: eventticket
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/eventticket}
+    username: ${DATABASE_USERNAME:eventticket}
+    # No default, deliberately. Every credential in this file is written the same way: the
+    # value lives in application-dev.yml and nowhere else, so an application started without
+    # the environment variable refuses to boot instead of quietly using a published one.
+    password: ${DATABASE_PASSWORD}
   jpa:
     open-in-view: false          # no lazy loading in the web layer; use cases own their transactions
     hibernate:
@@ -23,7 +26,10 @@ server:
     context-path: /api/v1
 
 app:
-  base-url: http://localhost:5173
+  # Where a browser reaches this application. Every link this system emails is built from it -
+  # address verification, a ticket, a refund notice - so a deployment that leaves it at the
+  # development default sends every recipient to a port on their own machine.
+  base-url: ${APP_BASE_URL:http://localhost:5173}
   # The only way to become a platform admin, and the only privilege no request can grant.
   # The endpoint it unlocks decides who may sell tickets at all, so conferring it needs
   # access to the deployment rather than to the application. Comma-separated; an account
@@ -31,9 +37,7 @@ app:
   platform-admin-emails: ${PLATFORM_ADMIN_EMAILS:}
   security:
     issuer: event-ticket
-    # Development only. Staging and production supply this through the environment;
-    # a checked-in secret is a development convenience and nothing more.
-    jwt-secret: ${JWT_SECRET:dev-only-secret-not-for-any-deployed-environment-0123456789}
+    jwt-secret: ${JWT_SECRET}
   checkout:
     # requirements/004 criterion 5. The buyer is shown this counting down.
     hold-window: PT10M
@@ -46,12 +50,20 @@ app:
     endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
     region: ${STORAGE_REGION:ap-southeast-1}
     bucket: ${STORAGE_BUCKET:event-ticket-covers}
-    access-key: ${STORAGE_ACCESS_KEY:eventticket}
-    secret-key: ${STORAGE_SECRET_KEY:eventticket}
+    access-key: ${STORAGE_ACCESS_KEY}
+    secret-key: ${STORAGE_SECRET_KEY}
     # Where a browser fetches a cover from. Separate from `endpoint` because they stop being
     # the same address the moment anything is put in front of the bucket, and because the
     # application talks to storage over the container network while a browser does not.
     public-base-url: ${STORAGE_PUBLIC_BASE_URL:http://localhost:9000/event-ticket-covers}
+    # Where a browser POSTs an upload. A third address, because the three are genuinely
+    # different things and only look alike on a laptop, where all of them are localhost:
+    # `endpoint` is how this application reaches the store and may be a name only the
+    # container network resolves; `public-base-url` may be a CDN, which can serve a cover
+    # and cannot accept one; and this is the bucket itself, reachable from a browser.
+    # Empty falls back to `endpoint`, which is what keeps `docker compose up` and a local
+    # run identical.
+    upload-base-url: ${STORAGE_UPLOAD_BASE_URL:}
     # nfr.md: five megabytes is generous for a poster and small enough that no resizing
     # pipeline is warranted. Signed into the upload, so the store refuses a larger one.
     max-bytes: 5242880
@@ -63,7 +75,7 @@ app:
     # than losing the JWT secret, which only forces people to sign in again.
     current-key-version: 1
     keys:
-      1: ${TICKET_CODE_KEY:dev-only-ticket-code-key-not-for-any-deployed-environment}
+      1: ${TICKET_CODE_KEY}
   admission:
     # Generous on purpose: a scanner reads QR codes continuously, so a camera resting on one
     # code fires the same scan many times a second. The door failing because somebody held
@@ -72,7 +84,7 @@ app:
     burst: 30
   payment:
     fake:
-      secret: ${FAKE_PAYMENT_SECRET:fake-provider-shared-secret}
+      secret: ${FAKE_PAYMENT_SECRET}
     stripe:
       # No default, and the provider bean is conditional on it. Unset means there is no STRIPE
       # provider at all rather than one that fails on first use - which is what keeps a fresh

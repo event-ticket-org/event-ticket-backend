@@ -1,0 +1,12 @@
+# Everything the image does not need, and one thing it must not have.
+#
+# `target/` is the important one: a jar built on a laptop is built against that laptop's JDK
+# and whatever was in the working tree at the time, and copying it in would make the image a
+# snapshot of somebody's machine rather than of this commit.
+target/
+.git/
+.github/
+.idea/
+docs/
+scripts/
+*.md

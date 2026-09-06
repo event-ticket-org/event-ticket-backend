@@ -71,6 +71,18 @@ public class TestcontainersConfiguration {
 			registry.add("app.storage.access-key", minio::getUserName);
 			registry.add("app.storage.secret-key", minio::getPassword);
 			registry.add("app.storage.public-base-url", () -> minio.getS3URL() + "/" + BUCKET);
+			// The address the browser is handed, spelled differently from the one the
+			// application uses, so that every upload here goes through the branch a
+			// deployment depends on. Containerising the backend is what separates the two -
+			// `endpoint` becomes a name only the container network resolves - and the same
+			// signature has to remain valid at the other address, because a POST policy signs
+			// the policy document and not the host.
+			//
+			// A rewritten spelling of the same container rather than an invented address:
+			// the upload has to actually arrive. Where Docker is remote and the host is not
+			// localhost this is a no-op, and the test proves less rather than failing.
+			registry.add("app.storage.upload-base-url",
+					() -> minio.getS3URL().replace("//localhost", "//127.0.0.1"));
 			// Small, so that "too large" can be tested by uploading sixty-four kilobytes
 			// rather than by pushing six megabytes through a container to prove a number in a
 			// policy. The ceiling under test is the mechanism, not the value in nfr.md.

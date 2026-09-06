@@ -1,0 +1,34 @@
+# Every credential this application needs, and the only place any of them has a value that is
+# written down.
+#
+# The main application.yml names these with no fallback - `${JWT_SECRET}`, not
+# `${JWT_SECRET:something}` - so the application cannot start without them. That is the whole
+# point of this file existing: a default in the main file is a value a deployment inherits by
+# forgetting, and forgetting here is not a small mistake. Ticket codes are a random lookup plus
+# a MAC under `ticket-code-key`, so a deployment that kept the development key would issue
+# tickets anybody holding this repository could mint. The same argument is weaker but the same
+# shape for the other four.
+#
+# Nothing here is secret. They are published, in git, on purpose - that is what makes them safe
+# to use locally and unusable anywhere else.
+#
+# Active by default for `./mvnw spring-boot:run` (configured in pom.xml) and for the test suite
+# (src/test/resources/application.properties), so a clone still runs with no setup. A container
+# does not get this profile and must supply the environment instead.
+spring:
+  datasource:
+    password: eventticket
+
+app:
+  security:
+    jwt-secret: dev-only-secret-not-for-any-deployed-environment-0123456789
+  storage:
+    # The compose.yaml MinIO root credentials.
+    access-key: eventticket
+    secret-key: eventticket
+  tickets:
+    keys:
+      1: dev-only-ticket-code-key-not-for-any-deployed-environment
+  payment:
+    fake:
+      secret: fake-provider-shared-secret

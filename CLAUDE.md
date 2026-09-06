@@ -166,6 +166,15 @@ own leading bytes decide what it is, at confirmation, because a declared content
 made by whoever is uploading. A file that fails is deleted rather than left in the bucket at a
 key its uploader knows.
 
+**The store has three addresses and they are three different things.** `endpoint` is how this
+application reaches it, `upload-base-url` is where a browser POSTs a cover, `public-base-url` is
+where a browser fetches one. On a laptop all three are localhost, which is what hides the
+distinction until the backend runs in a container - then `endpoint` becomes a name only the
+container network resolves, and a form action built from it fails at DNS in the browser for a
+reason no server log mentions. Pointing the form elsewhere is safe because a POST policy signs
+the policy document and not the host, so the same signature is valid at any address reaching the
+same bucket.
+
 **Keys are built, not remembered** — `pending/{org}/{event}/{uploadId}` and
 `covers/{org}/{event}/{uploadId}.{ext}`. That is why an upload needs no row to confirm it, and
 it is also the tenancy: both ids come from a request that has already been checked. The upload
@@ -182,6 +191,28 @@ picture needs; the test container does the same.
 reports its length as unknown, so the JDK client sends the form chunked, and MinIO answers a
 chunked POST with `EmptyRequestBody` - which reads like a bug in the body you built and is not.
 Concatenate and use `ofByteArray`.
+
+## No credential has a default
+
+`application.yml` names every credential with no fallback - `${JWT_SECRET}`, never
+`${JWT_SECRET:something}` - so an application started without one refuses to boot. The
+development values live in `application-dev.yml`, which is committed on purpose: a published
+credential is safe exactly as long as it can only ever be used locally.
+
+The profile is active for `./mvnw spring-boot:run` (configured in the POM) and for the suite
+(`src/test/resources/application.properties`), so a clone still runs with no setup. A container
+does not get it and must supply the environment instead.
+
+This is the only arrangement where forgetting is safe. A default in the main file is a value a
+deployment inherits by never noticing, and `app.tickets.keys` is not a small one to inherit: a
+ticket code is a random lookup plus a MAC under that key, so a deployment still holding the
+development key issues tickets anybody with this repository can mint - and it looks, from the
+outside and from the logs, exactly like a working system. `DeploymentConfigurationTest` reads
+the file and fails if a fallback reappears.
+
+Stripe's two keys are the deliberate exception, written `${STRIPE_SECRET_KEY:}`. Absent means
+there is no Stripe provider at all rather than one that fails on first use, which is what lets
+a fresh clone and the whole suite run with no account.
 
 ## Logging
 
