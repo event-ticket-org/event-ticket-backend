@@ -60,6 +60,12 @@ public class CancelEvent {
 
     private static final Logger log = LoggerFactory.getLogger(CancelEvent.class);
 
+    /**
+     * The "provider" on a refusal that never reached one. It is not a provider name and is not
+     * looked up as one - no callback can ever name it, because nobody was asked.
+     */
+    private static final String REFUSED_BY_US = "NONE";
+
     private final EventRepository events;
     private final OrderRepository orders;
     private final TicketRepository tickets;
@@ -144,6 +150,29 @@ public class CancelEvent {
             // whichever Order happened to be first.
             log.warn("Refund failed during cancellation orderId={} cause={}",
                     orderId, failure.getMessage());
+            recordRefusal(orderId, reason, failure.getMessage());
+        }
+    }
+
+    /**
+     * criterion 7, and the half of it that was missing: a refusal is an outcome, and an Order
+     * with no refund row at all reads as "still going" for ever on the screen somebody is
+     * watching to find out what they have to finish by hand. The log is not where they look.
+     *
+     * <p>Its own transaction, because the one that just failed is gone.
+     */
+    private void recordRefusal(UUID orderId, String reason, String cause) {
+        try {
+            transactions.execute(status -> {
+                Order order = orders.findOrThrow(orderId);
+                return refunds.save(Refund.refused(order.id(), order.organizationId(),
+                        order.buyerUserId(), REFUSED_BY_US, order.total(), reason,
+                        cause == null ? "The refund was refused." : cause));
+            });
+        } catch (RuntimeException unrecordable) {
+            // Nothing more to do. The refund already failed; failing to write that down must
+            // not stop the Orders after this one from being attempted.
+            log.error("Could not record the refusal for orderId={}", orderId, unrecordable);
         }
     }
 

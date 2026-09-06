@@ -124,6 +124,53 @@ class RefundsAndCancellationTest extends ApiTest {
     }
 
     @Test
+    @DisplayName("a second refund while one is in flight is refused in words, not by a constraint")
+    void oneLiveRefundPerOrder() {
+        Organizer organizer = organizer();
+        TokenPair buyer = signUp("buyer@example.com");
+        Order order = buyAndPay(buyer, organizer.eventId(), seatIdsOf(organizer.eventId(), 1));
+
+        Refund first = refund(organizer.manager(), order.getId(), "Wrong date.");
+
+        var refused = exchange(HttpMethod.POST, "/orders/" + order.getId() + "/refunds",
+                organizer.manager(), reason("Clicked twice."), Error.class);
+
+        // The partial unique index makes this true concurrently; this is what makes it legible.
+        // Without it the answer was a 500 reading "the request could not be completed", which
+        // is the worst thing to say to somebody who has just double-clicked a refund button.
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(refused.getBody().getCode()).isEqualTo(ErrorCode.ORDER_NOT_REFUNDABLE);
+        assertThat(refused.getBody().getMessage()).contains("already with the payment provider");
+        assertThat(jdbc.queryForObject("select count(*) from refund where order_id = ?",
+                Long.class, order.getId())).isEqualTo(1L);
+
+        // And once it has settled, the refusal changes its words rather than staying stale.
+        deliverRefundWebhook(refundRefOf(first), "REFUNDED");
+        assertThat(exchange(HttpMethod.POST, "/orders/" + order.getId() + "/refunds",
+                organizer.manager(), reason("And again."), Error.class).getBody().getMessage())
+                .contains("already been refunded");
+    }
+
+    @Test
+    @DisplayName("a refund the provider refused can be attempted again")
+    void aFailedRefundCanBeRetried() {
+        Organizer organizer = organizer();
+        TokenPair buyer = signUp("buyer@example.com");
+        Order order = buyAndPay(buyer, organizer.eventId(), seatIdsOf(organizer.eventId(), 1));
+
+        Refund first = refund(organizer.manager(), order.getId(), "Wrong date.");
+        deliverRefundWebhook(refundRefOf(first), "REFUND_FAILED", "Account closed.");
+
+        // The whole reason the unique index excludes failed attempts: this is the case where
+        // trying again is the right answer, and the history keeps both.
+        Refund second = refund(organizer.manager(), order.getId(), "Trying the other account.");
+        deliverRefundWebhook(refundRefOf(second), "REFUNDED");
+
+        assertThat(orderOf(buyer, order.getId()).getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertThat(refundsOf(organizer.manager(), order.getId())).hasSize(2);
+    }
+
+    @Test
     @DisplayName("a ticket that has been used at the door can never be refunded")
     void aRedeemedTicketIsNeverRefunded() {
         Organizer organizer = organizer(doorsOpenNow());
@@ -279,8 +326,21 @@ class RefundsAndCancellationTest extends ApiTest {
         // The refundable one was still attempted: one failure did not roll the other back.
         assertThat(jdbc.queryForObject("select count(*) from refund where order_id = ?",
                 Long.class, refundable.getId())).isEqualTo(1L);
-        assertThat(jdbc.queryForObject("select count(*) from refund where order_id = ?",
-                Long.class, used.getId())).isZero();
+
+        // criterion 7, and the part that is easy to get wrong: the refused Order is *reported*
+        // as failed, with the reason, rather than left looking like one still in progress.
+        // Without this it read "still going" for ever on the screen somebody watches to find
+        // out what they have to finish by hand.
+        assertThat(started.getOrders())
+                .filteredOn(state -> state.getOrderId().equals(used.getId()))
+                .singleElement()
+                .satisfies(state -> {
+                    assertThat(state.getStatus()).isEqualTo(RefundStatus.REFUND_FAILED);
+                    assertThat(state.getFailureReason()).contains("already been used at the door");
+                });
+        assertThat(started.getFailed()).isEqualTo(1);
+        // And the other one is genuinely still going: asked for, and with the provider.
+        assertThat(started.getPending()).isEqualTo(1);
     }
 
     @Test
