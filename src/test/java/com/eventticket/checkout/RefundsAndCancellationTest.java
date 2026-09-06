@@ -454,6 +454,73 @@ class RefundsAndCancellationTest extends ApiTest {
                 String.class, refund.getId());
     }
 
+    /**
+     * requirements/008 criterion 11, and the reason it exists.
+     *
+     * <p>This is what Stripe actually did, reproduced through the fake: a refund reported
+     * settled, and then - once the issuer rejected the card - reported failed. Before this,
+     * the second delivery was discarded as a re-delivery of a refund that had already
+     * settled, so the Order stayed REFUNDED, the seat stayed on sale, and the buyer kept an
+     * email saying money had gone back that had not.
+     */
+    @Test
+    @DisplayName("a provider that reverses a settled refund puts the order back in front of somebody")
+    void aSettledRefundCanBeReversed() {
+        Organizer organizer = organizer();
+        TokenPair buyer = signUp("reversed-buyer@example.com");
+        List<UUID> seats = seatIdsOf(organizer.eventId(), 1);
+        Order order = buyAndPay(buyer, organizer.eventId(), seats);
+
+        Refund started = refund(organizer.manager(), order.getId(), "Wrong date advertised.");
+        deliverRefundWebhook(refundRefOf(started), "REFUNDED");
+
+        assertThat(orderOf(buyer, order.getId()).getStatus()).isEqualTo(OrderStatus.REFUNDED);
+        assertThat(availabilityOf(organizer.eventId(), seats.get(0)))
+                .isEqualTo(SeatAvailability.AVAILABLE);
+
+        // The provider changes its mind.
+        deliverRefundWebhook(refundRefOf(started), "REFUND_FAILED", "expired_or_canceled_card");
+
+        assertThat(refundsOf(organizer.manager(), order.getId()))
+                .singleElement()
+                .satisfies(reversed -> {
+                    assertThat(reversed.getStatus()).isEqualTo(RefundStatus.REFUND_FAILED);
+                    assertThat(reversed.getFailureReason()).isEqualTo("expired_or_canceled_card");
+                });
+
+        // The flag, because the record alone changes nothing: this Order is holding money
+        // again and somebody has to see it (criteria 10 and 11).
+        assertThat(orderOf(buyer, order.getId()).getRefundRequired()).isTrue();
+
+        // And it has to be actionable. A flag on an Order nobody may refund is the failure
+        // criterion 10 describes, and "already refunded" was exactly that answer.
+        Refund second = refund(organizer.manager(), order.getId(), "Trying again after the reversal.");
+        assertThat(second.getStatus()).isEqualTo(RefundStatus.REFUND_PENDING);
+
+        // The seat is left where it was. It went back on sale when the refund settled and may
+        // have been sold since; taking it from a second buyer to fix the first one's money is
+        // the wrong trade.
+        assertThat(availabilityOf(organizer.eventId(), seats.get(0)))
+                .isEqualTo(SeatAvailability.AVAILABLE);
+    }
+
+    /** A failure for a refund that already failed is the ordinary re-delivery, not a reversal. */
+    @Test
+    @DisplayName("a repeated failure changes nothing")
+    void aRepeatedFailureIsStillJustAFailure() {
+        Organizer organizer = organizer();
+        TokenPair buyer = signUp("repeat-buyer@example.com");
+        Order order = buyAndPay(buyer, organizer.eventId(), seatIdsOf(organizer.eventId(), 1));
+
+        Refund started = refund(organizer.manager(), order.getId(), "Wrong date.");
+        deliverRefundWebhook(refundRefOf(started), "REFUND_FAILED", "Card account closed.");
+        deliverRefundWebhook(refundRefOf(started), "REFUND_FAILED", "Card account closed.");
+
+        assertThat(refundsOf(organizer.manager(), order.getId())).singleElement()
+                .satisfies(it -> assertThat(it.getStatus()).isEqualTo(RefundStatus.REFUND_FAILED));
+        assertThat(orderOf(buyer, order.getId()).getStatus()).isEqualTo(OrderStatus.PAID);
+    }
+
     private void deliverRefundWebhook(String providerRef, String status) {
         deliverRefundWebhook(providerRef, status, null);
     }

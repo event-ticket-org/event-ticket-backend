@@ -35,6 +35,8 @@ public class AuditTrail {
     public static final String ORDER_REFUND_REQUIRED = "ORDER_REFUND_REQUIRED";
     public static final String ORDER_REFUND_STARTED = "ORDER_REFUND_STARTED";
     public static final String ORDER_REFUNDED = "ORDER_REFUNDED";
+    /** requirements/008 criterion 11: the provider took a settlement back. */
+    public static final String ORDER_REFUND_REVERSED = "ORDER_REFUND_REVERSED";
     public static final String EVENT_CANCELLED = "EVENT_CANCELLED";
 
     private final AuditEntryRepository entries;

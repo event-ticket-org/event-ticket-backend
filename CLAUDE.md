@@ -313,6 +313,31 @@ times the price and look plausible in every log.
 there is no provider by that name - which is true. The suite and a fresh clone need no account
 and no network.
 
+## A settled refund is not a finished one
+
+requirements/008 criterion 11, learned the expensive way. Stripe answers a refund that will
+fail with `refund.created`, `refund.updated` and `charge.refund.updated` all saying
+**succeeded**, and only then `refund.failed`. We settled on the first, told the buyer their
+money was back, and put the seat on sale; Stripe's own record said `failed`.
+
+Two lines let it through, and both looked correct:
+
+- `refund.failed` was not in the handled event types. The event named after the outcome was
+  the one not being read.
+- `ConfirmRefund` returned `ALREADY_SETTLED` for anything arriving after a settlement, which
+  is right for a re-delivery and wrong for a reversal. **A failure for a refund that succeeded
+  is not a duplicate.**
+
+The reversal sets `refund_required` rather than a new flag - it already means "money taken for
+seats that were not delivered", which is exactly the state - and `requireRefundable` now admits
+a REFUNDED Order that carries it, because a flag nobody may act on is the failure criterion 10
+describes. The Order's status stays REFUNDED: a refund *was* attempted and *was* reported
+settled, and rewriting that to PAID erases the only clue to why a buyer is holding an email
+saying they were refunded.
+
+Seats are left on sale. They were released when the refund settled and may have been sold
+since; taking one back from a second buyer to fix the first one's money is the wrong trade.
+
 ## Money moves on a callback, both ways
 
 Neither half of the money can be completed from a browser, and that is the design rather than a
