@@ -228,6 +228,17 @@ not touch at all. **Failed sign-ins log the attempted address** — personal dat
 deliberately, because without it credential stuffing against one account is indistinguishable
 from noise.
 
+**A mistake in a request is not a server error.** A wrong method, an unparseable body, a
+content type nothing reads, an id that is not a UUID - all four used to answer 500 with "The
+request could not be completed" and log an ERROR with a stack trace. The first cost is a caller
+told the server broke when it understood perfectly; the second is worse, because a client
+looping on a wrong URL then buries every real defect in the log. `ApiExceptionHandler` takes
+the status Spring already worked out, through the `ErrorResponse` interface rather than a list
+of exception classes - except `HttpMessageNotReadableException` and
+`MethodArgumentTypeMismatchException`, which do not implement it and have to be named. None of
+them carry a new error code: a client branches on the code for domain outcomes, and a request
+that never reached a use case has no outcome.
+
 Name a new servlet filter for what it does, not `RequestContextFilter`: Spring Boot's WebMvc
 auto-configuration registers a bean of that name and a second one stops the app booting.
 
