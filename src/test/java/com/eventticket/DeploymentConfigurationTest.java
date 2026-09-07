@@ -57,12 +57,18 @@ class DeploymentConfigurationTest {
      * The other half of the same rule. Stripe's keys are absent rather than required - no key
      * means no Stripe provider at all, which is what lets a clone and the whole suite run with
      * no account - and an empty default is how that is written.
+     *
+     * <p>Mail is the same shape and the same reason. Requiring {@code MAIL_PASSWORD} would stop
+     * an application that never intended to send any, and the absent case is a real deployment
+     * rather than a broken one: it writes to the log, and says so at startup.
      */
     @Test
     @DisplayName("an optional provider is absent by default, not required")
-    void stripeStaysOptional() throws IOException {
+    void optionalProvidersStayOptional() throws IOException {
         assertThat(Files.readString(APPLICATION_YML))
                 .contains("${STRIPE_SECRET_KEY:}")
-                .contains("${STRIPE_WEBHOOK_SECRET:}");
+                .contains("${STRIPE_WEBHOOK_SECRET:}")
+                .contains("${MAIL_HOST:}")
+                .contains("${MAIL_PASSWORD:}");
     }
 }

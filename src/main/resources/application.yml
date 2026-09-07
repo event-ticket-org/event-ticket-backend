@@ -17,6 +17,27 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  mail:
+    # Absent means there is no mail server, exactly as an absent Stripe key means there is no
+    # Stripe: an unconfigured deployment writes its mail to the log rather than failing on the
+    # first person who registers, and a fresh clone and the whole suite need no account. Boot
+    # creates a JavaMailSender only when `host` is set, which is the switch
+    # EmailTransportConfiguration reads.
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    # A credential, and written the same way as Stripe's rather than as JWT_SECRET's: mail is
+    # optional, so requiring this would stop an application that never intended to send any.
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${MAIL_AUTH:true}
+      mail.smtp.starttls.enable: ${MAIL_STARTTLS:true}
+      # Without a timeout the default is none at all, and a mail host that accepts a
+      # connection and never answers holds the dispatcher's thread until the process is
+      # restarted - one unreachable server stopping every other message rather than one.
+      mail.smtp.connectiontimeout: 10000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
 
 server:
   port: 8080
@@ -44,6 +65,10 @@ app:
     expiry-sweep: PT1M
   email:
     retry-interval: PT1M
+    # Who the mail is from, which is not necessarily who it logs in as: a provider may permit
+    # sending as an alias, and a login is not always an address. Empty falls back to the login,
+    # which is the common case and what a personal Gmail account requires anyway.
+    from: ${MAIL_FROM:}
   storage:
     # Object storage for cover images (ADR-0006). Locally this is the MinIO container in
     # compose.yaml; deployed, the endpoint is left empty and the SDK resolves AWS itself.
