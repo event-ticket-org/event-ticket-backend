@@ -3,12 +3,18 @@ package com.eventticket.platform.usecase;
 import com.eventticket.organization.domain.Membership;
 import com.eventticket.organization.repository.MembershipRepository;
 import com.eventticket.organization.domain.Organization;
+import com.eventticket.platform.domain.OrganizationReview;
+import com.eventticket.shared.DirectoryUser;
 import com.eventticket.organization.repository.OrganizationRepository;
 import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.email.EmailSender;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.shared.tenancy.TenantPublisher;
 import com.eventticket.shared.UserDirectory;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,7 +49,7 @@ public class DecideOrganization {
     }
 
     @Transactional
-    public Organization decide(UUID organizationId, boolean approved, String reason) {
+    public OrganizationReview decide(UUID organizationId, boolean approved, String reason) {
         admins.requireCallerIsPlatformAdmin();
         UUID adminUserId = TenantContext.requireUserId();
 
@@ -55,19 +61,25 @@ public class DecideOrganization {
         // which is the correct default: the exception is granted here, explicitly and once.
         tenant.adopt(adminUserId, organizationId);
 
+        // Read once and used twice: the same people are emailed and reported back, and asking
+        // twice invites the two answers to differ.
+        List<Membership> owners = memberships.findByOrganizationId(organizationId).stream()
+                .filter(Membership::isOwner)
+                .toList();
+
         if (approved) {
             Organization decided = organizations.save(applyApproval(organization));
             audit.record(organizationId, AuditTrail.ORGANIZATION_APPROVED, organization.name());
             log.info("Approved organization organizationId={} by admin userId={}", organizationId, adminUserId);
-            notifyOwners(organizationId, organization.name(), true, null);
-            return decided;
+            notifyOwners(owners, organization.name(), true, null);
+            return new OrganizationReview(decided, describe(owners));
         }
 
         Organization decided = organizations.save(applyRejection(organization, reason));
         audit.record(organizationId, AuditTrail.ORGANIZATION_REJECTED, organization.name());
         log.info("Rejected organization organizationId={} by admin userId={}", organizationId, adminUserId);
-        notifyOwners(organizationId, organization.name(), false, reason);
-        return decided;
+        notifyOwners(owners, organization.name(), false, reason);
+        return new OrganizationReview(decided, describe(owners));
     }
 
     private static Organization applyApproval(Organization organization) {
@@ -80,7 +92,19 @@ public class DecideOrganization {
         return organization;
     }
 
-    private void notifyOwners(UUID organizationId, String name, boolean approved, String reason) {
+    /** The owners as the contract describes them, so the response says who was decided about. */
+    private List<DirectoryUser> describe(List<Membership> owners) {
+        Map<UUID, DirectoryUser> people = users.usersOf(
+                owners.stream().map(Membership::userId).toList());
+        return owners.stream()
+                .map(owner -> people.get(owner.userId()))
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(DirectoryUser::displayName,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+    }
+
+    private void notifyOwners(List<Membership> owners, String name, boolean approved, String reason) {
         String subject = approved
                 ? name + " has been approved"
                 : "About your organization, " + name;
@@ -94,8 +118,6 @@ public class DecideOrganization {
                   %s
                   """.formatted(name, reason == null ? "No reason was given." : reason);
 
-        memberships.findByOrganizationId(organizationId).stream()
-                .filter(Membership::isOwner)
-                .forEach(owner -> email.send(users.emailOf(owner.userId()), subject, body));
+        owners.forEach(owner -> email.send(users.emailOf(owner.userId()), subject, body));
     }
 }
