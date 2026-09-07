@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,9 @@ import org.springframework.stereotype.Component;
 public class ImageRenderer {
 
     private static final Logger log = LoggerFactory.getLogger(ImageRenderer.class);
+
+    /** Four bytes a pixel once decoded, so this is the ceiling on one raster: about 200MB. */
+    private static final long MAX_PIXELS = 50_000_000L;
 
     /**
      * What a rendering came out as, which is not always what went in.
@@ -71,20 +75,61 @@ public class ImageRenderer {
     }
 
     /**
-     * Empty for a format nothing on the classpath reads, and for bytes that claimed to be an
-     * image and are not.
+     * Empty for a format nothing on the classpath reads, for bytes that claimed to be an image
+     * and are not, and for a picture with more pixels than we are willing to hold at once.
      *
      * <p>{@code ImageIO.read} answers null rather than throwing when no reader recognises the
      * stream, which is the case that matters here and the one easiest to write past.
      */
     private Optional<BufferedImage> decode(byte[] original) {
-        try {
-            return Optional.ofNullable(ImageIO.read(new ByteArrayInputStream(original)));
+        try (var stream = ImageIO.createImageInputStream(new ByteArrayInputStream(original))) {
+            if (stream == null) {
+                return Optional.empty();
+            }
+            var readers = ImageIO.getImageReaders(stream);
+            if (!readers.hasNext()) {
+                return Optional.empty();
+            }
+            ImageReader reader = readers.next();
+            try {
+                reader.setInput(stream);
+                if (tooManyPixels(reader)) {
+                    return Optional.empty();
+                }
+                return Optional.ofNullable(reader.read(0));
+            } finally {
+                reader.dispose();
+            }
         } catch (IOException | RuntimeException unreadable) {
             log.info("Cover could not be decoded for rendering, serving it as uploaded: {}",
                     unreadable.toString());
             return Optional.empty();
         }
+    }
+
+    /**
+     * The header says how big the picture is; reading it costs nothing and reading the picture
+     * costs four bytes a pixel.
+     *
+     * <p>This exists because the upload ceiling bounds the wrong thing. nfr.md caps a cover at
+     * five megabytes, and a smooth 12000x8000 JPEG is one and a half - so a file that passes
+     * every check this system has can ask the application to allocate roughly 380MB, and a few
+     * at once would take down a container sized for a service that never does that. An
+     * organizer does not have to mean any harm for that to happen; a camera can produce it.
+     *
+     * <p>Fifty megapixels is chosen to sit above what a phone or a full-frame camera produces
+     * and below what would hurt: it caps one decode at about 200MB. Anything larger is served
+     * exactly as uploaded, which is a path that already exists for AVIF and for pictures too
+     * small to shrink - so this costs a visitor bandwidth and never a picture.
+     */
+    private boolean tooManyPixels(ImageReader reader) throws IOException {
+        long pixels = (long) reader.getWidth(0) * reader.getHeight(0);
+        if (pixels <= MAX_PIXELS) {
+            return false;
+        }
+        log.info("Cover is {} megapixels, past the {} we will decode - serving it as uploaded",
+                pixels / 1_000_000, MAX_PIXELS / 1_000_000);
+        return true;
     }
 
     private static BufferedImage scale(BufferedImage source, int width) {
