@@ -1,6 +1,7 @@
 package com.eventticket.event.web;
 
 import com.eventticket.api.model.EventSeatMap;
+import com.eventticket.api.model.CoverImageSize;
 import com.eventticket.api.model.EventStatus;
 import com.eventticket.api.model.Money;
 import com.eventticket.api.model.PricingTier;
@@ -57,6 +58,7 @@ final class EventMapper {
                 (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
+        sizesOf(event).forEach(dto::addCoverImageSizesItem);
         dto.setDescription(event.description());
         dto.setDoorsOpenAt(at(event.doorsOpenAt()));
         dto.setEndsAt(at(event.endsAt()));
@@ -73,8 +75,27 @@ final class EventMapper {
                 (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
+        sizesOf(event).forEach(dto::addCoverImageSizesItem);
         view.pricing().cheapest().ifPresent(price -> dto.setPriceFrom(toDto(price)));
         return dto;
+    }
+
+    /**
+     * requirements/003 criterion 22.
+     *
+     * <p>Empty is an ordinary answer rather than a failure - a small upload has nothing
+     * smaller worth making, and a format nothing decodes has none at all. {@code
+     * coverImageUrl} is always a real image, which is what makes an empty list free for a
+     * client to handle.
+     *
+     * <p>Public views only. The manager's own Event carries no sizes: this is bandwidth on
+     * somebody's phone, and a manager checking their own event is at a desk looking at one of
+     * them.
+     */
+    private static List<CoverImageSize> sizesOf(Event event) {
+        return event.coverImageRenderings().stream()
+                .map(rendering -> new CoverImageSize(uri(rendering.url()), rendering.width()))
+                .toList();
     }
 
     static EventSeatMap toDto(EventSeatMapView map) {

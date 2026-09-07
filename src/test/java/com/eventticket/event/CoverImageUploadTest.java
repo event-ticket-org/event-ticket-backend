@@ -3,6 +3,7 @@ package com.eventticket.event;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.CoverConfirmation;
+import com.eventticket.api.model.CoverImageSize;
 import com.eventticket.api.model.CoverUpload;
 import com.eventticket.api.model.Error;
 import com.eventticket.api.model.Event;
@@ -21,6 +22,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.imageio.ImageIO;
@@ -168,6 +170,106 @@ class CoverImageUploadTest extends ApiTest {
                 new CoverConfirmation("../../../etc/passwd"), Error.class);
         assertThat(traversal.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(traversal.getBody().getCode().getValue()).isEqualTo("COVER_NOT_UPLOADED");
+    }
+
+    // ---- requirements/003 criterion 22: the same picture, at sizes worth fetching ----
+
+    @Test
+    @DisplayName("a cover is offered at every width smaller than it, smallest first")
+    void aCoverIsOfferedInSeveralSizes() {
+        TokenPair manager = approvedManager();
+        Event event = publishedEvent(manager);
+        byte[] uploaded = poster();
+
+        CoverUpload upload = beginUpload(manager, event.getId()).getBody();
+        uploadTo(upload, uploaded, "poster.jpg");
+        confirm(manager, event.getId(), upload.getUploadId(), "A crowd at dusk");
+
+        PublicEvent page = exchange(HttpMethod.GET, "/public/events/" + event.getId(), null, null,
+                PublicEvent.class).getBody();
+
+        assertThat(page.getCoverImageSizes()).extracting(CoverImageSize::getWidth)
+                .containsExactly(320, 640, 1280);
+        for (CoverImageSize size : page.getCoverImageSizes()) {
+            byte[] rendering = fetch(size.getUrl());
+            // Fetchable by anybody, like the cover itself: these are what a public page draws.
+            assertThat(rendering).isNotEmpty();
+            // And worth fetching. A "smaller" size that is not smaller is bandwidth spent to
+            // save bandwidth.
+            assertThat(rendering.length).isLessThan(uploaded.length);
+        }
+    }
+
+    /**
+     * The empty case, which the contract calls ordinary rather than a failure: nothing larger
+     * than the upload is produced, so a picture with nothing smaller has no sizes - and
+     * `coverImageUrl` is still a real image, which is what makes that free for a client.
+     */
+    @Test
+    @DisplayName("a cover with nothing smaller worth making offers no sizes, and still works")
+    void aTinyCoverOffersNoSizes() {
+        TokenPair manager = approvedManager();
+        Event event = publishedEvent(manager);
+
+        CoverUpload upload = beginUpload(manager, event.getId()).getBody();
+        uploadTo(upload, png(), "one-pixel.png");
+        confirm(manager, event.getId(), upload.getUploadId(), "A single pixel");
+
+        PublicEvent page = exchange(HttpMethod.GET, "/public/events/" + event.getId(), null, null,
+                PublicEvent.class).getBody();
+
+        assertThat(page.getCoverImageSizes()).isEmpty();
+        assertThat(fetch(page.getCoverImageUrl())).isEqualTo(png());
+    }
+
+    /**
+     * The failure that costs money rather than correctness: renderings left behind point at
+     * nothing, break nothing, and are invisible until somebody reads a bill. There are three
+     * of them per cover, so forgetting quadruples what a busy organizer leaves in the bucket.
+     */
+    @Test
+    @DisplayName("replacing a cover removes its renderings, not just the cover")
+    void replacingRemovesTheRenderingsToo() {
+        TokenPair manager = approvedManager();
+        Event event = publishedEvent(manager);
+
+        CoverUpload first = beginUpload(manager, event.getId()).getBody();
+        uploadTo(first, poster(), "one.jpg");
+        confirm(manager, event.getId(), first.getUploadId(), "First");
+        List<URI> orphaned = sizeUrlsOf(event.getId());
+        assertThat(orphaned).hasSize(3);
+
+        CoverUpload second = beginUpload(manager, event.getId()).getBody();
+        uploadTo(second, poster(), "two.jpg");
+        confirm(manager, event.getId(), second.getUploadId(), "Second");
+
+        assertThat(orphaned).allSatisfy(url -> assertThat(statusOf(url)).isEqualTo(404));
+        assertThat(sizeUrlsOf(event.getId())).hasSize(3)
+                .allSatisfy(url -> assertThat(statusOf(url)).isEqualTo(200));
+    }
+
+    @Test
+    @DisplayName("removing a cover removes its renderings")
+    void removingRemovesTheRenderingsToo() {
+        TokenPair manager = approvedManager();
+        Event event = publishedEvent(manager);
+
+        CoverUpload upload = beginUpload(manager, event.getId()).getBody();
+        uploadTo(upload, poster(), "cover.jpg");
+        confirm(manager, event.getId(), upload.getUploadId(), "A crowd");
+        List<URI> renderings = sizeUrlsOf(event.getId());
+        assertThat(renderings).hasSize(3);
+
+        exchange(HttpMethod.DELETE, "/events/" + event.getId() + "/cover", manager, null,
+                Void.class);
+
+        assertThat(renderings).allSatisfy(url -> assertThat(statusOf(url)).isEqualTo(404));
+    }
+
+    private List<URI> sizeUrlsOf(java.util.UUID eventId) {
+        return exchange(HttpMethod.GET, "/public/events/" + eventId, null, null,
+                PublicEvent.class).getBody().getCoverImageSizes().stream()
+                .map(CoverImageSize::getUrl).toList();
     }
 
     @Test
@@ -346,6 +448,29 @@ class CoverImageUploadTest extends ApiTest {
                     HttpResponse.BodyHandlers.discarding()).statusCode();
         } catch (IOException | InterruptedException failed) {
             throw new IllegalStateException("Could not reach " + url, failed);
+        }
+    }
+
+    /**
+     * Something worth rendering smaller: wide enough that every requested width is genuinely
+     * smaller than it, and compressible enough to fit under the 64KB ceiling the test
+     * configuration uses.
+     */
+    private static byte[] poster() {
+        var image = new BufferedImage(1400, 788, BufferedImage.TYPE_INT_RGB);
+        var canvas = image.createGraphics();
+        for (int x = 0; x < image.getWidth(); x += 20) {
+            canvas.setColor(new java.awt.Color(30 + (x * 100) / image.getWidth(),
+                    20 + (x * 60) / image.getWidth(), 60 + (x * 120) / image.getWidth()));
+            canvas.fillRect(x, 0, 20, image.getHeight());
+        }
+        canvas.dispose();
+        try {
+            var out = new ByteArrayOutputStream();
+            ImageIO.write(image, "jpg", out);
+            return out.toByteArray();
+        } catch (IOException impossible) {
+            throw new IllegalStateException("JPEG encoding is required of every JVM", impossible);
         }
     }
 

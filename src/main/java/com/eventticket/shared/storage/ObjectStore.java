@@ -35,6 +35,25 @@ public interface ObjectStore {
     byte[] readLeadingBytes(String key, int count);
 
     /**
+     * The whole object.
+     *
+     * <p>The expensive sibling of {@link #readLeadingBytes}, and only worth it for the one
+     * caller that has to look at every pixel rather than at a file's first twelve bytes:
+     * rendering a cover at smaller sizes (requirements/003 criterion 22). The size ceiling in
+     * the upload policy is what bounds this.
+     */
+    byte[] read(String key);
+
+    /**
+     * Write bytes the application produced, rather than promoting bytes somebody uploaded.
+     *
+     * <p>The derived renderings of a cover never pass through a browser, so there is no form
+     * to sign and nothing to check afterwards - this is the one path where the application is
+     * the source of the file.
+     */
+    void put(String key, byte[] content, String contentType);
+
+    /**
      * Copy then delete, giving the copy a content type.
      *
      * <p>Used to promote an accepted upload out of the pending prefix. The type is set here

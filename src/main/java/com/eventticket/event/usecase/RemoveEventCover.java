@@ -5,7 +5,6 @@ import com.eventticket.event.repository.EventRepository;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.storage.ObjectStore;
 import com.eventticket.shared.tenancy.TenantContext;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +38,9 @@ public class RemoveEventCover {
         Event event = events.findOrThrow(eventId).requireBelongsTo(organizationId);
         event.requireCoverIsChangeable();
 
-        Optional.ofNullable(event.clearCover()).ifPresent(store::delete);
+        // Every key, not just the cover's: the renderings derived from it are files nothing
+        // will point at once this returns.
+        event.clearCover().forEach(store::delete);
         events.save(event);
     }
 }
