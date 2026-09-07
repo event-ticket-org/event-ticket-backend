@@ -97,7 +97,47 @@ class ImageRendererTest {
         assertThat(renderer.renderingsOf(new byte[0], 320)).isEmpty();
     }
 
+    /**
+     * The upload ceiling bounds file size and not decode cost, which are different numbers by
+     * two orders of magnitude: a smooth 12000x8000 JPEG compresses to about 1.5MB, so a file
+     * well inside nfr.md's five megabytes can ask for a 380MB allocation. A few at once is an
+     * outage on a container sized for an application that never does that, and an organizer
+     * does not have to mean any harm - a camera produces these.
+     *
+     * <p>Refusing to decode it is not a refusal to serve it: no renderings is a state that
+     * already exists, so the cover is served exactly as uploaded.
+     */
+    @Test
+    @DisplayName("a picture with absurdly many pixels is not decoded at all")
+    void anEnormousPictureIsNotDecoded() throws IOException {
+        // Comfortably inside any file-size limit, and far outside any sane pixel count.
+        byte[] enormous = smoothJpeg(9000, 6000);
+        assertThat(enormous.length).isLessThan(5 * 1024 * 1024);
+
+        assertThat(renderer.renderingsOf(enormous, 320, 640, 1280)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a large but ordinary photograph is still rendered")
+    void aLargePhotographIsStillRendered() throws IOException {
+        // 24 megapixels: a full-frame camera, and the case the cap must not catch.
+        assertThat(renderer.renderingsOf(smoothJpeg(6000, 4000), 320, 640, 1280))
+                .extracting(ImageRenderer.Rendering::width)
+                .containsExactly(320, 640, 1280);
+    }
+
     // ---- images to work on ----
+
+    /** Compressible on purpose: the point is many pixels in few bytes. */
+    private static byte[] smoothJpeg(int width, int height) throws IOException {
+        var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D canvas = image.createGraphics();
+        canvas.setPaint(new java.awt.GradientPaint(0, 0, new Color(20, 30, 80),
+                width, height, new Color(220, 60, 120)));
+        canvas.fillRect(0, 0, width, height);
+        canvas.dispose();
+        return encode(image, "jpg");
+    }
 
     private static byte[] jpeg(int width, int height) throws IOException {
         return encode(paint(new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)), "jpg");

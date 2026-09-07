@@ -187,6 +187,14 @@ Storing the key also makes deletion exact - and deletion is where this leaks, be
 orphaned renderings per cover point at nothing, break nothing, and are invisible until somebody
 reads a bill. `Event.coverKeys()` exists so neither caller has to remember they exist.
 
+**The upload ceiling bounds file size, not decode cost, and those differ by two orders of
+magnitude.** nfr.md caps a cover at five megabytes; a smooth 12000x8000 JPEG is one and a half.
+So a file that passes every check can ask the application to allocate about 380MB, four bytes a
+pixel, and a few at once is an outage on a container sized for an application that never does
+that. An organizer does not have to mean any harm - a camera produces these. `ImageRenderer`
+reads the header, which is free, and declines anything past fifty megapixels. Declining to
+render is not declining to serve: no renderings is a state that already existed.
+
 **The JVM reads JPEG and PNG; WebP needs a library and AVIF has no decoder worth having.** An
 AVIF cover is therefore served exactly as uploaded, with no smaller sizes. That is deliberate
 (ADR-0006): refusing the format would narrow the contract to fit an implementation detail, and
