@@ -55,7 +55,7 @@ final class EventMapper {
         Event event = view.event();
         var dto = new PublicEvent(event.id(), event.title(), view.organizationName(),
                 view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
-                (int) view.seatsAvailable());
+                (int) view.seatsTotal(), (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
         sizesOf(event).forEach(dto::addCoverImageSizesItem);
@@ -72,7 +72,7 @@ final class EventMapper {
         Event event = view.event();
         var dto = new PublicEventSummary(event.id(), event.title(), view.organizationName(),
                 view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
-                (int) view.seatsAvailable());
+                (int) view.seatsTotal(), (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
         sizesOf(event).forEach(dto::addCoverImageSizesItem);

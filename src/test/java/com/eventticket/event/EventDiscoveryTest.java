@@ -128,16 +128,60 @@ class EventDiscoveryTest extends ApiTest {
     // ---- how many seats are left (criteria 3 and 11) ----
 
     @Test
-    @DisplayName("an entry says how many seats are still on sale")
+    @DisplayName("an entry says how many seats are still on sale, out of how many there were")
     void anEntrySaysWhatIsLeft() {
         TokenPair manager = approvedManager();
         Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 3));
         Event event = publish(manager, venue, "Six Seater", NEXT_MONTH);
 
-        assertThat(only(search("six")).getSeatsAvailable()).isEqualTo(6);
+        PublicEventSummary listed = only(search("six"));
+        assertThat(listed.getSeatsTotal()).isEqualTo(6);
+        assertThat(listed.getSeatsAvailable()).isEqualTo(6);
         // And the event's own page agrees, from the same query - a buyer looking at both must
         // not see two different numbers.
         assertThat(publicEvent(event.getId()).getSeatsAvailable()).isEqualTo(6);
+        assertThat(publicEvent(event.getId()).getSeatsTotal()).isEqualTo(6);
+    }
+
+    /**
+     * The two numbers have to differ somewhere, or nothing here would notice them being
+     * swapped: both are integers, so the compiler is no help and a full room reads the same
+     * either way round.
+     */
+    @Test
+    @DisplayName("the total stays put as seats sell, and the two are not the same number")
+    void theTotalDoesNotMoveWhenSeatsSell() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 3));
+        Event event = publish(manager, venue, "Selling Six", NEXT_MONTH);
+
+        TokenPair buyer = signUp("buyer-" + UUID.randomUUID() + "@example.com");
+        buyAndPay(buyer, event.getId(), seatIdsOf(event.getId(), 2));
+
+        PublicEventSummary listed = only(search("selling six"));
+        assertThat(listed.getSeatsTotal()).isEqualTo(6);
+        assertThat(listed.getSeatsAvailable()).isEqualTo(4);
+    }
+
+    /**
+     * requirements/003 criteria 4 and 11, and the reason the total is "on sale" rather than
+     * "in the room": a seat an organizer held back was never available to anybody, so counting
+     * it would make every event with a withheld row look emptier than it is.
+     */
+    @Test
+    @DisplayName("seats withheld from sale are in neither number")
+    void withheldSeatsAreNotCounted() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 3));
+        Event event = publish(manager, venue, "Withholding Six", NEXT_MONTH);
+
+        var patch = new com.eventticket.api.model.EventPatch();
+        patch.setUnsellableSeatIds(seatIdsOf(event.getId(), 2));
+        exchange(HttpMethod.PATCH, "/events/" + event.getId(), manager, patch, Event.class);
+
+        PublicEventSummary listed = only(search("withholding"));
+        assertThat(listed.getSeatsTotal()).isEqualTo(4);
+        assertThat(listed.getSeatsAvailable()).isEqualTo(4);
     }
 
     /**

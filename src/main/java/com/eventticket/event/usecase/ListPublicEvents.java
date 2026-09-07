@@ -7,7 +7,7 @@ import com.eventticket.event.domain.PublicEventView;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.EventSeatRepository;
 import com.eventticket.event.repository.PricingTierRepository;
-import com.eventticket.event.repository.SeatsOnSale;
+import com.eventticket.event.repository.SeatCounts;
 import com.eventticket.event.support.PageCursor;
 import com.eventticket.organization.domain.Organization;
 import com.eventticket.organization.repository.OrganizationRepository;
@@ -90,15 +90,16 @@ public class ListPublicEvents {
         Map<UUID, List<PricingTier>> tiersByEvent = tiers
                 .findByEventIdIn(visible.stream().map(Event::id).toList())
                 .stream().collect(Collectors.groupingBy(PricingTier::eventId));
-        Map<UUID, Long> onSale = SeatsOnSale.asMap(
-                seats.countOnSale(visible.stream().map(Event::id).toList(), now));
+        Map<UUID, SeatCounts> counted = SeatCounts.asMap(
+                seats.countSeats(visible.stream().map(Event::id).toList(), now));
 
         List<PublicEventView> items = visible.stream().map(event -> {
             Venue venue = venuesById.get(event.venueId());
             return new PublicEventView(event, organizationNames.get(event.organizationId()),
                     venue.name(), venue.city(), venue.timezone(),
                     EventPricing.of(event, null, tiersByEvent.getOrDefault(event.id(), List.of())),
-                    SeatsOnSale.of(onSale, event.id()));
+                    SeatCounts.of(counted, event.id()).available(),
+                    SeatCounts.of(counted, event.id()).total());
         }).toList();
 
         Event last = visible.get(visible.size() - 1);
