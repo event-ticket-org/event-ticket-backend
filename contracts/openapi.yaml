@@ -1156,8 +1156,21 @@ components:
       required: [label, x, y, tierName]
       properties:
         label: { type: string, maxLength: 20, description: Unique within the Seat Map }
-        x: { type: number }
-        y: { type: number }
+        x:
+          type: number
+          description: |
+            Position across the room, in seat pitches. **One unit is roughly one seat**: the
+            distance between neighbours in a row is 1, and an aisle is the extra unit you leave
+            between them.
+
+            The unit is otherwise arbitrary - a Seat Map has no real-world dimensions and a
+            renderer fits whatever it is given to whatever box it has - but the *scale* is not,
+            because a seat is drawn at a fixed size in these units. Space seats twenty units
+            apart and the map is technically valid and renders as sixty specks in an empty
+            room, which is a mistake nothing here can catch and nobody makes twice.
+        y:
+          type: number
+          description: Position up the room, in the same units as `x`. Rows are 1 apart.
         tierName: { type: string, maxLength: 50 }
 
     MapElement:
@@ -1293,7 +1306,7 @@ components:
     PublicEventSummary:
       type: object
       required: [id, title, organizationName, venueName, city, startsAt, timezone,
-                 seatsAvailable]
+                 seatsTotal, seatsAvailable]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
@@ -1325,6 +1338,17 @@ components:
             be made should cost a visitor bandwidth and not a picture.
           items: { $ref: '#/components/schemas/CoverImageSize' }
         priceFrom: { $ref: '#/components/schemas/Money' }
+        seatsTotal:
+          type: integer
+          minimum: 0
+          description: |
+            Seats the Event has for sale at all, so a client can say how nearly gone it is
+            rather than only how many are left. "Four seats left" means something different in
+            a room of twenty and a room of two thousand, and without this a client has to
+            pick one meaning and be wrong about the other.
+
+            Not a capacity figure and not attendance: seats an organizer has marked as not
+            for sale are not counted, because they were never available to anybody.
         seatsAvailable:
           type: integer
           minimum: 0
