@@ -19,9 +19,11 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.MetadataDirective;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -138,6 +140,20 @@ public class S3ObjectStore implements ObjectStore {
                         .range("bytes=0-" + (count - 1)).build(),
                 ResponseTransformer.toBytes());
         return bytes.asByteArray();
+    }
+
+    @Override
+    public byte[] read(String key) {
+        return client.getObject(GetObjectRequest.builder()
+                        .bucket(properties.bucket()).key(key).build(),
+                ResponseTransformer.toBytes()).asByteArray();
+    }
+
+    @Override
+    public void put(String key, byte[] content, String contentType) {
+        client.putObject(PutObjectRequest.builder()
+                        .bucket(properties.bucket()).key(key).contentType(contentType).build(),
+                RequestBody.fromBytes(content));
     }
 
     @Override

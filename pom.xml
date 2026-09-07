@@ -31,6 +31,20 @@
 		<spring-modulith.version>2.1.1</spring-modulith.version>
 	</properties>
 	<dependencies>
+		<!--
+			A WebP reader for ImageIO, so a WebP cover can be rendered at smaller sizes like the
+			others (requirements/003 criterion 22). The JDK ships readers for JPEG and PNG and for
+			neither of the two modern formats this contract accepts.
+
+			There is no AVIF equivalent worth adding - no pure-Java decoder for it exists that this
+			would want to depend on - so an AVIF cover is served exactly as uploaded. ADR-0006
+			records why that is a deliberate outcome rather than a gap.
+		-->
+		<dependency>
+			<groupId>com.twelvemonkeys.imageio</groupId>
+			<artifactId>imageio-webp</artifactId>
+			<version>3.12.0</version>
+		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator</artifactId>

@@ -175,6 +175,23 @@ reason no server log mentions. Pointing the form elsewhere is safe because a POS
 the policy document and not the host, so the same signature is valid at any address reaching the
 same bucket.
 
+**A cover is stored at several sizes, and which ones is recorded rather than assumed.** Only
+widths smaller than the upload are produced - enlarging invents detail and charges bandwidth for
+it - so the set is a property of the file. Deriving it from a constant would mean every existing
+Event advertising files that were never written the day the constant changed.
+
+**The renderings' keys are the one exception to building keys from ids.** A rendering's
+extension is not the upload's: the classpath has a WebP *reader* and no writer, so a WebP cover
+is decoded and written back as JPEG, and nothing the Event knows says what a rendering became.
+Storing the key also makes deletion exact - and deletion is where this leaks, because three
+orphaned renderings per cover point at nothing, break nothing, and are invisible until somebody
+reads a bill. `Event.coverKeys()` exists so neither caller has to remember they exist.
+
+**The JVM reads JPEG and PNG; WebP needs a library and AVIF has no decoder worth having.** An
+AVIF cover is therefore served exactly as uploaded, with no smaller sizes. That is deliberate
+(ADR-0006): refusing the format would narrow the contract to fit an implementation detail, and
+failing the upload would turn an optimisation into an outage.
+
 **Keys are built, not remembered** — `pending/{org}/{event}/{uploadId}` and
 `covers/{org}/{event}/{uploadId}.{ext}`. That is why an upload needs no row to confirm it, and
 it is also the tenancy: both ids come from a request that has already been checked. The upload

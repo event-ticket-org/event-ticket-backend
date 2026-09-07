@@ -31,6 +31,20 @@ final class CoverImageKeys {
     }
 
     /**
+     * One smaller rendering, beside the cover it came from.
+     *
+     * <p>The width is in the name so the set is readable in a bucket listing, and the
+     * extension is the rendering's rather than the upload's - a WebP is decoded and written
+     * back as JPEG. That is also why the key is stored on the Event instead of rebuilt here
+     * when it is needed: nothing the Event knows says what a rendering was written as.
+     */
+    static String rendering(UUID organizationId, UUID eventId, String uploadId, int width,
+                            String extension) {
+        return "%s/%s/%s/%s-%d.%s".formatted(SERVED, organizationId, eventId, uploadId, width,
+                extension);
+    }
+
+    /**
      * An upload id is ours, opaque to everyone else, and goes into a path - so it is checked
      * before it is concatenated into one. A caller sending {@code ../} is trying to write
      * somewhere else in the bucket.

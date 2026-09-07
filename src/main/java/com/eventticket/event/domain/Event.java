@@ -11,8 +11,10 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -54,6 +56,15 @@ public class Event {
 
     @Column(name = "cover_image_alt")
     private String coverImageAlt;
+
+    /**
+     * The smaller copies that exist (requirements/003 criterion 22). Null and empty both mean
+     * "none", which is an ordinary state: a small upload has nothing smaller worth making, and
+     * a format nothing decodes has none at all.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "cover_image_renderings")
+    private List<CoverRendering> coverImageRenderings;
 
     @Column(name = "starts_at", nullable = false)
     private Instant startsAt;
@@ -150,6 +161,13 @@ public class Event {
 
     public String coverImageAlt() {
         return coverImageAlt;
+    }
+
+    /** Smallest first, so a client reading it in order is reading it in the order it will pick. */
+    public List<CoverRendering> coverImageRenderings() {
+        return coverImageRenderings == null ? List.of()
+                : coverImageRenderings.stream()
+                        .sorted(Comparator.comparingInt(CoverRendering::width)).toList();
     }
 
     public boolean hasCover() {
@@ -261,23 +279,46 @@ public class Event {
      * cover an Event ever had is a store nobody can reason about - and doing it here would put
      * an object store inside an entity.
      */
-    public String coverIs(String key, String url, String alt) {
+    /**
+     * Answers every key that is no longer anybody's cover - the one it replaced and all of that
+     * one's renderings - so the caller can delete them. An Event has one cover, and a store
+     * full of the ones it used to have is a store nobody can reason about (ADR-0006).
+     */
+    public List<String> coverIs(String key, String url, String alt,
+                                List<CoverRendering> renderings) {
         requireStillEditable();
-        String previous = this.coverImageKey;
+        List<String> orphaned = coverKeys();
         this.coverImageKey = key;
         this.coverImageUrl = url;
         this.coverImageAlt = blankToNull(alt);
-        return previous;
+        this.coverImageRenderings = renderings == null || renderings.isEmpty() ? null : renderings;
+        return orphaned;
     }
 
-    /** Answers the key that is no longer anybody's cover, or null when there was none. */
-    public String clearCover() {
+    /** Answers every key that is no longer anybody's cover, empty when there was none. */
+    public List<String> clearCover() {
         requireStillEditable();
-        String previous = this.coverImageKey;
+        List<String> orphaned = coverKeys();
         this.coverImageKey = null;
         this.coverImageUrl = null;
         this.coverImageAlt = null;
-        return previous;
+        this.coverImageRenderings = null;
+        return orphaned;
+    }
+
+    /**
+     * The cover and everything derived from it, which is what deleting one has to reach.
+     *
+     * <p>One method rather than two callers each remembering the renderings exist. Forgetting
+     * them does not fail anything: it leaves files in the bucket that nothing points at, which
+     * is invisible until somebody looks at a bill.
+     */
+    private List<String> coverKeys() {
+        if (coverImageKey == null) {
+            return List.of();
+        }
+        return Stream.concat(Stream.of(coverImageKey),
+                coverImageRenderings().stream().map(CoverRendering::key)).toList();
     }
 
     private static String blankToNull(String value) {

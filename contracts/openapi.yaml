@@ -1302,8 +1302,28 @@ components:
         city: { type: string }
         startsAt: { type: string, format: date-time }
         timezone: { type: string }
-        coverImageUrl: { type: [string, 'null'], format: uri }
+        coverImageUrl:
+          type: [string, 'null']
+          format: uri
+          description: |
+            The cover, at the largest size there is. Use this when not choosing between the
+            sizes below - it is always a real image, where `coverImageSizes` may be empty.
         coverImageAlt: { type: [string, 'null'] }
+        coverImageSizes:
+          type: array
+          description: |
+            Smaller renderings of the same picture, smallest first, so a client can fetch the
+            one it will actually draw (requirements/003 criterion 22). A listing drawing a
+            140px band has no use for a poster.
+
+            Data rather than a ready-made `srcset` string: an HTML attribute is one client's
+            way of expressing this, and building it from these two fields is a join.
+
+            May be empty, and that is not a failure. Nothing larger than the upload is
+            produced, so a small upload has no smaller sizes; and a format the system cannot
+            decode is served as it arrived rather than refused, because a size that could not
+            be made should cost a visitor bandwidth and not a picture.
+          items: { $ref: '#/components/schemas/CoverImageSize' }
         priceFrom: { $ref: '#/components/schemas/Money' }
         seatsAvailable:
           type: integer
@@ -1317,6 +1337,16 @@ components:
             and it lets a client say how few are left without a second contract change. Held
             seats count as unavailable - a hold expires, but a buyer told "one left" who then
             finds none has been misled by a technicality.
+
+    CoverImageSize:
+      type: object
+      required: [url, width]
+      properties:
+        url: { type: string, format: uri }
+        width:
+          type: integer
+          minimum: 1
+          description: The rendering's width in pixels, which is what a client picks by.
 
     PublicEvent:
       allOf:
