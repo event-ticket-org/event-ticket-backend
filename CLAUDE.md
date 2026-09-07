@@ -116,6 +116,15 @@ table makes it a chicken and egg solvable only by punching a hole in the policie
 carries `organization_id` and `buyer_user_id` so the webhook can `TenantPublisher.adopt` them
 and obey the policies from there on.
 
+**A platform administrator is a member of nothing, so the membership policy hides everything
+from them.** That is correct - they are not in any Organization - and it is why the approval
+queue came back with every Organization and an empty owner list beside each one. Reading owners
+across Organizations goes through `organization_owner_ids` (V12), a definer function that returns
+ids and nothing else. Widening `membership_tenant_isolation` to admit administrators would grant
+every Membership in the system for every purpose in order to serve one screen. `DecideOrganization`
+does not need it: it adopts the tenant of the Organization it is deciding on, which is one
+Organization and works for a decision, and cannot work for a list.
+
 **Writes a policy must refuse belong in a `SECURITY DEFINER` function, not in a wider policy.**
 A buyer holding a seat is the case: `hold_seats`, `release_seats` and `sell_seats` write
 `event_seat` on their behalf. Widening the policy instead would also let them change `for_sale`

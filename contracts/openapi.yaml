@@ -1118,6 +1118,44 @@ components:
         name: { type: string }
         status: { $ref: '#/components/schemas/OrganizationStatus' }
         createdAt: { type: string, format: date-time }
+        owners:
+          type: array
+          description: |
+            Who is accountable for this Organization (requirements/001 criterion 6).
+
+            An approval decides who may sell tickets to the public on a page this platform
+            endorses, and a name and a date is not enough to decide that on. A list rather than
+            one owner because an Organization may have several - at the moment it is decided it
+            has exactly the person who created it, and that stops being true later.
+
+            Seen only by a platform administrator and by the Organization's own creator, which
+            is why it can carry an address at all.
+          items: { $ref: '#/components/schemas/OrganizationOwner' }
+        decisionReason:
+          type: [string, 'null']
+          description: |
+            Why an Organization was rejected, in the words the administrator sent its owners.
+
+            It was already written and already emailed; not carrying it here meant the queue of
+            rejected Organizations was a list of names with no record of why any of them was
+            rejected, including to the administrator who rejected them.
+
+            Null for an Organization awaiting a decision, and for an approved one - approving
+            needs no explanation and the field is cleared, so a reason never outlives the
+            rejection it belonged to.
+
+    OrganizationOwner:
+      type: object
+      required: [displayName, email, emailVerified]
+      properties:
+        displayName: { type: string }
+        email: { type: string, format: email }
+        emailVerified:
+          type: boolean
+          description: |
+            Whether they have proved they can read that address. An unverified owner is not a
+            reason to refuse on its own, and it is a thing an administrator should be able to
+            see before endorsing somebody.
 
     Membership:
       type: object

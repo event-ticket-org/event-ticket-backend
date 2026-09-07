@@ -18,6 +18,7 @@ public interface MembershipRepository extends JpaRepository<Membership, UUID> {
 
     public List<Membership> findByOrganizationId(UUID organizationId);
 
+
     public List<Membership> findByUserId(UUID userId);
 
     public Optional<Membership> findByOrganizationIdAndUserId(UUID organizationId, UUID userId);

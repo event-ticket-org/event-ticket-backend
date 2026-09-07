@@ -166,6 +166,99 @@ class OrganizationOnboardingTest extends ApiTest {
                 });
     }
 
+    /**
+     * requirements/001 criterion 14. Approving decides who may sell tickets to the public on a
+     * page this platform endorses, and until this the administrator saw a name and a date.
+     */
+    @Test
+    @DisplayName("14: the queue says who is accountable for each organization")
+    void theQueueSaysWhoIsAccountable() {
+        TokenPair owner = signUp("owner@example.com");
+        createOrganization(owner, "Hanoi Live");
+        TokenPair admin = signUp(PLATFORM_ADMIN_EMAIL);
+
+        Organization waiting = only(queue(admin, "PENDING_APPROVAL"));
+
+        assertThat(waiting.getOwners()).singleElement().satisfies(person -> {
+            assertThat(person.getEmail()).isEqualTo("owner@example.com");
+            assertThat(person.getDisplayName()).isNotBlank();
+            // Verified because `signUp` follows the emailed link. Unverified is not a reason
+            // to refuse on its own, and it is a thing worth being able to see.
+            assertThat(person.getEmailVerified()).isTrue();
+        });
+    }
+
+    /**
+     * requirements/001 criterion 6. The reason was written, stored and emailed already; not
+     * carrying it back meant the rejected queue was a list of names that did not say why any
+     * of them was rejected, to the administrator who rejected them.
+     */
+    @Test
+    @DisplayName("6: a rejection says why, and approving afterwards clears it")
+    void aRejectionSaysWhyAndApprovingClearsIt() {
+        TokenPair owner = signUp("owner@example.com");
+        Organization organization = createOrganization(owner, "Hanoi Live");
+        TokenPair admin = signUp(PLATFORM_ADMIN_EMAIL);
+
+        var rejection = new OrganizationDecisionRequest(
+                OrganizationDecisionRequest.DecisionEnum.REJECTED);
+        rejection.setReason("The address given is a residential flat.");
+        Organization rejected = exchange(HttpMethod.POST,
+                "/admin/organizations/" + organization.getId() + "/decision", admin, rejection,
+                Organization.class).getBody();
+
+        assertThat(rejected.getDecisionReason()).isEqualTo("The address given is a residential flat.");
+        assertThat(only(queue(admin, "REJECTED")).getDecisionReason())
+                .isEqualTo("The address given is a residential flat.");
+
+        // Criterion 15: a decision may be revisited, and criterion 6's reason must not outlive
+        // the rejection it belonged to.
+        Organization approved = exchange(HttpMethod.POST,
+                "/admin/organizations/" + organization.getId() + "/decision", admin,
+                new OrganizationDecisionRequest(OrganizationDecisionRequest.DecisionEnum.APPROVED),
+                Organization.class).getBody();
+
+        assertThat(approved.getStatus()).isEqualTo(OrganizationStatus.APPROVED);
+        assertThat(approved.getDecisionReason()).isNull();
+        assertThat(queue(admin, "REJECTED")).isEmpty();
+    }
+
+    /**
+     * requirements/001 criterion 15. The domain always allowed this - both decisions set the
+     * status unconditionally - and the only screen offered the buttons while a decision was
+     * pending and never again, so an Organization rejected by mistake was permanently dead to
+     * anybody using the product.
+     */
+    @Test
+    @DisplayName("15: an approved organization can be stopped again")
+    void anApprovedOrganizationCanBeStopped() {
+        TokenPair owner = signUp("owner@example.com");
+        Organization organization = createOrganization(owner, "Hanoi Live");
+        TokenPair admin = signUp(PLATFORM_ADMIN_EMAIL);
+        approve(organization);
+
+        var rejection = new OrganizationDecisionRequest(
+                OrganizationDecisionRequest.DecisionEnum.REJECTED);
+        rejection.setReason("Reported by three buyers.");
+        Organization stopped = exchange(HttpMethod.POST,
+                "/admin/organizations/" + organization.getId() + "/decision", admin, rejection,
+                Organization.class).getBody();
+
+        assertThat(stopped.getStatus()).isEqualTo(OrganizationStatus.REJECTED);
+        assertThat(stopped.getDecisionReason()).isEqualTo("Reported by three buyers.");
+    }
+
+    private java.util.List<Organization> queue(TokenPair admin, String status) {
+        return exchange(HttpMethod.GET, "/admin/organizations?status={status}", admin, null,
+                com.eventticket.api.model.OrganizationPage.class,
+                java.util.Map.of("status", status)).getBody().getItems();
+    }
+
+    private static Organization only(java.util.List<Organization> items) {
+        assertThat(items).hasSize(1);
+        return items.get(0);
+    }
+
     @Test
     @DisplayName("6: an ordinary user cannot approve organizations")
     void nonAdminCannotApprove() {

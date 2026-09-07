@@ -34,5 +34,15 @@ public interface UserDirectory {
      */
     Map<UUID, String> emailsOf(Collection<UUID> userIds);
 
+    /**
+     * Name, address and whether the address is proven, for many Users at once and keyed by id.
+     *
+     * <p>The batched sibling of the three single lookups here, for the one caller that needs
+     * all three about a page of people: the approval queue shows who is accountable for each
+     * Organization on it (requirements/001 criterion 14), and asking per row per fact is six
+     * queries for two organizations.
+     */
+    Map<UUID, DirectoryUser> usersOf(Collection<UUID> userIds);
+
     String displayNameOf(UUID userId);
 }
