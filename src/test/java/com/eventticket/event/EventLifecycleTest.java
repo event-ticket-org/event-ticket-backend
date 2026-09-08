@@ -516,4 +516,68 @@ class EventLifecycleTest extends ApiTest {
         TokenPair alice = signUp("alice@example.com");
         return switchTo(alice, createOrganization(alice, "Acme Events"));
     }
+    /**
+     * requirements/003 criterion 16, on an Event with no end time.
+     *
+     * <p>The rule used to be skipped entirely whenever either optional instant was absent, so
+     * this exact request was accepted and doors opened five hours after the event started. The
+     * identical mistake on an Event that had an end time was refused, which is why it survived:
+     * the check looked like it worked, because the shape that reached it was always the whole
+     * window.
+     */
+    @Test
+    @DisplayName("doors cannot open after the start, even with no end time to compare against")
+    void halfAWindowIsStillOrdered() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        // The four-argument helper fills in a whole window, which is the path that already
+        // worked - an Event with an end time reached the check either way. Both instants have
+        // to be genuinely absent or this test passes against the bug it exists for.
+        Event event = createEvent(manager, venue.getId(), "Doors only", NEXT_MONTH, null, null);
+
+        var patch = new EventPatch();
+        patch.setDoorsOpenAt(NEXT_MONTH.plusHours(5));
+        ResponseEntity<Error> refused = exchange(HttpMethod.PATCH, "/events/" + event.getId(),
+                manager, patch, Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(refused.getBody().getMessage()).contains("no later than the event starts");
+        assertThat(refused.getBody().getDetails()).containsEntry("field", "doorsOpenAt");
+    }
+
+    @Test
+    @DisplayName("an end time before the start is refused with no doors time to compare against")
+    void anEndBeforeTheStartIsRefusedOnItsOwn() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = createEvent(manager, venue.getId(), "Ends only", NEXT_MONTH, null, null);
+
+        var patch = new EventPatch();
+        patch.setEndsAt(NEXT_MONTH.minusHours(1));
+        ResponseEntity<Error> refused = exchange(HttpMethod.PATCH, "/events/" + event.getId(),
+                manager, patch, Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(refused.getBody().getMessage()).contains("must end after it starts");
+        assertThat(refused.getBody().getDetails()).containsEntry("field", "endsAt");
+    }
+
+    /** The whole window still works, which is the path that was never broken. */
+    @Test
+    @DisplayName("a properly ordered window is still accepted")
+    void anOrderedWindowIsAccepted() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = createEvent(manager, venue.getId(), "Ordered", NEXT_MONTH, null, null);
+
+        var patch = new EventPatch();
+        patch.setDoorsOpenAt(NEXT_MONTH.minusHours(1));
+        patch.setEndsAt(NEXT_MONTH.plusHours(3));
+        ResponseEntity<Event> accepted = exchange(HttpMethod.PATCH, "/events/" + event.getId(),
+                manager, patch, Event.class);
+
+        assertThat(accepted.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(accepted.getBody().getDoorsOpenAt()).isNotNull();
+    }
+
 }

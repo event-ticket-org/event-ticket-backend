@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
@@ -461,18 +462,30 @@ public class Event {
      * (requirements/003 criteria 8 and 9).
      */
     /**
-     * Checked whenever any of the three instants moves, not only when the window is set: moving
-     * a published Event's start time past its own end is the easy way to make a door refuse
-     * everybody.
+     * requirements/003 criterion 16, which states the two bounds separately: {@code doorsOpenAt}
+     * no later than the start, {@code endsAt} after it.
+     *
+     * <p>Checked whenever any of the three instants moves, not only when the window is set:
+     * moving a published Event's start time past its own end is the easy way to make a door
+     * refuse everybody.
+     *
+     * <p><strong>Each bound is checked on its own, because either may be absent.</strong> This
+     * used to return early when <em>either</em> was null, which read as "no window, nothing to
+     * order" and was not: an Event with doors and no end time had no ordering enforced at all,
+     * so doors could be set hours after the start and the API accepted it. The same mistake on
+     * an Event that happened to have an end time was refused, which is what kept it hidden -
+     * the rule looked like it worked, and only one of the two shapes ever reached it.
      */
     private void requireWindowOrdered() {
-        if (doorsOpenAt == null || endsAt == null) {
-            return;
-        }
-        if (doorsOpenAt.isAfter(startsAt) || !endsAt.isAfter(startsAt)) {
+        if (doorsOpenAt != null && doorsOpenAt.isAfter(startsAt)) {
             throw new ApiException(ErrorCodes.VALIDATION_FAILED,
-                    "Doors must open no later than the event starts, and it must end after it "
-                            + "starts.");
+                    "Doors must open no later than the event starts.",
+                    Map.of("field", "doorsOpenAt"));
+        }
+        if (endsAt != null && !endsAt.isAfter(startsAt)) {
+            throw new ApiException(ErrorCodes.VALIDATION_FAILED,
+                    "An event must end after it starts.",
+                    Map.of("field", "endsAt"));
         }
     }
 
