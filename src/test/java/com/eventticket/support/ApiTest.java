@@ -153,6 +153,17 @@ public abstract class ApiTest {
                         OrganizationDecisionRequest.DecisionEnum.APPROVED), Organization.class);
     }
 
+    /** The other decision, for tests that care what a refused Organization is told.
+     * requirements/001 criterion 6: a rejection carries a reason, and the reason is readable
+     * afterwards rather than only emailed. */
+    protected void reject(Organization organization, String reason) {
+        var request = new OrganizationDecisionRequest(
+                OrganizationDecisionRequest.DecisionEnum.REJECTED);
+        request.setReason(reason);
+        exchange(HttpMethod.POST, "/admin/organizations/" + organization.getId() + "/decision",
+                platformAdmin(), request, Organization.class);
+    }
+
     /** Created on first use and signed in afterwards, so a test may approve more than once. */
     private TokenPair platformAdmin() {
         String address = PLATFORM_ADMIN_EMAIL;

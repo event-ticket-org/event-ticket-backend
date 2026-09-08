@@ -1167,6 +1167,27 @@ components:
         email: { type: string, format: email }
         displayName: { type: string }
         role: { $ref: '#/components/schemas/Role' }
+        organizationStatus:
+          allOf:
+            - $ref: '#/components/schemas/OrganizationStatus'
+          description: |
+            Where this Organization stands (requirements/001 criterion 16). Present on the
+            Memberships in `/me`, which is where a client learns what it may offer: an
+            Organization that is not `APPROVED` cannot publish, and a person who cannot see
+            that reads a refusal at publish time as the product being broken.
+
+            On the Membership rather than behind an endpoint of its own, because every client
+            that needs it has already asked for `/me` - and one that has several Memberships
+            needs the standing of each in order to say which of them can sell.
+        decisionReason:
+          type: [string, 'null']
+          description: |
+            Why a `REJECTED` Organization was rejected, in the administrator's own words
+            (requirements/001 criterion 6). Null for any other status.
+
+            Shown to the Organization's own members as well as emailed to the Owner, because
+            the email is the copy that gets lost - and a rejection nobody can re-read is one
+            nobody can act on.
 
     VenueInput:
       type: object
@@ -1331,6 +1352,23 @@ components:
               type: array
               items: { $ref: '#/components/schemas/PricingTier' }
             soldCount: { type: integer }
+            salesTotal:
+              allOf:
+                - $ref: '#/components/schemas/Money'
+              description: |
+                Money currently held for this Event (requirements/003 criterion 23): the sum
+                of its Orders that are paid and not refunded.
+
+                Held, not ever taken. A refunded Order has given the money back, and counting
+                it here would tell an organizer they hold funds they do not.
+
+                Computed here rather than by a client because a client cannot: seats sit in
+                different Pricing Tiers, a price change after publishing applies only to later
+                sales, and refunds remove Orders from the total. Any sum attempted from
+                `soldCount` and the tier prices would be a plausible wrong number.
+
+                Absent for a caller who may not see sales figures - Gate Staff, per
+                requirements/007 criterion 13.
             refundRequiredCount:
               type: integer
               description: |

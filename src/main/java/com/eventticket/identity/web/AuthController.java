@@ -3,6 +3,7 @@ package com.eventticket.identity.web;
 import com.eventticket.api.AuthApi;
 import com.eventticket.api.model.LoginRequest;
 import com.eventticket.api.model.Me;
+import com.eventticket.api.model.OrganizationStatus;
 import com.eventticket.api.model.RefreshRequest;
 import com.eventticket.api.model.RegisterRequest;
 import com.eventticket.api.model.SwitchOrganizationRequest;
@@ -93,15 +94,32 @@ public class AuthController implements AuthApi {
         AppUser user = view.user();
 
         Me me = new Me(user.id(), user.email(), user.displayName(), user.emailVerified(),
-                view.memberships().stream().map(m -> membership(m, view.organizationNames().get(m.organizationId()))).toList());
+                view.memberships().stream()
+                        .map(m -> membership(m, view.organizations().get(m.organizationId())))
+                        .toList());
         me.setPlatformAdmin(user.platformAdmin());
         return ResponseEntity.status(HttpStatus.OK).body(me);
     }
 
-    private static com.eventticket.api.model.Membership membership(Membership m, String organizationName) {
+    /**
+     * requirements/001 criterion 16: a Membership says where its Organization stands, so
+     * somebody waiting for approval can see that they are waiting rather than discovering it
+     * from a refusal after building an Event.
+     *
+     * <p>The reason travels with a rejection and only with one. It is the administrator's own
+     * words (criterion 6), shown here as well as emailed because the email is the copy that
+     * gets lost.
+     */
+    private static com.eventticket.api.model.Membership membership(
+            Membership m, com.eventticket.organization.domain.Organization organization) {
         var dto = new com.eventticket.api.model.Membership(
                 m.userId(), m.organizationId(), com.eventticket.api.model.Role.fromValue(m.role().name()));
-        dto.setOrganizationName(organizationName);
+        if (organization == null) {
+            return dto;
+        }
+        dto.setOrganizationName(organization.name());
+        dto.setOrganizationStatus(OrganizationStatus.fromValue(organization.status().name()));
+        dto.setDecisionReason(organization.decisionReason());
         return dto;
     }
 

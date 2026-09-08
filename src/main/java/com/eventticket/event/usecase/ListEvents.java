@@ -90,7 +90,7 @@ public class ListEvents {
                             tiersByEvent.getOrDefault(event.id(), List.of())));
                     var counts = countsByEvent.get(event.id());
                     return counts == null ? detail
-                            : detail.withCounts(counts.getSold(), counts.getRefundRequired());
+                            : detail.withCounts(counts.getSold(), counts.getRefundRequired(), counts.salesTotal());
                 })
                 .toList();
 

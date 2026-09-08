@@ -58,7 +58,7 @@ public class GetEvent {
         // already depends on this module. Zero when there are no Orders at all, which is what
         // an absent row means.
         return events.countsFor(List.of(eventId)).stream().findFirst()
-                .map(counts -> detail.withCounts(counts.getSold(), counts.getRefundRequired()))
+                .map(counts -> detail.withCounts(counts.getSold(), counts.getRefundRequired(), counts.salesTotal()))
                 .orElse(detail);
     }
 }

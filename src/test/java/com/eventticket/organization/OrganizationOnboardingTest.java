@@ -39,6 +39,52 @@ class OrganizationOnboardingTest extends ApiTest {
         assertThat(me.getMemberships()).isEmpty();
     }
 
+    /**
+     * requirements/001 criterion 16, and the reason it exists: criterion 5 makes the refusal at
+     * publish time explain itself, which is necessary and late. By then somebody has built a
+     * Venue, a Seat Map, an Event and its prices believing they were about to sell tickets.
+     *
+     * <p>All three states, because the interesting one is the middle. Waiting can last days,
+     * and a person who cannot see they are in it reads it as a product that is broken.
+     */
+    @Test
+    @DisplayName("16: a membership says where its organization stands, and why if refused")
+    void aMembershipCarriesTheOrganizationsStanding() {
+        TokenPair session = signUp("owner@example.com");
+        Organization created = createOrganization(session, "Hanoi Live");
+
+        assertThat(standingOf(session))
+                .as("waiting, and visible as waiting before anything is refused")
+                .satisfies(m -> {
+                    assertThat(m.getOrganizationStatus()).isEqualTo(OrganizationStatus.PENDING_APPROVAL);
+                    assertThat(m.getDecisionReason()).isNull();
+                });
+
+        reject(created, "Không đủ giấy tờ đăng ký kinh doanh.");
+
+        assertThat(standingOf(session))
+                .as("the administrator's own words, readable here as well as emailed")
+                .satisfies(m -> {
+                    assertThat(m.getOrganizationStatus()).isEqualTo(OrganizationStatus.REJECTED);
+                    assertThat(m.getDecisionReason()).isEqualTo("Không đủ giấy tờ đăng ký kinh doanh.");
+                });
+
+        approve(created);
+
+        assertThat(standingOf(session))
+                .as("approved, and the stale reason does not linger beside it")
+                .satisfies(m -> {
+                    assertThat(m.getOrganizationStatus()).isEqualTo(OrganizationStatus.APPROVED);
+                    assertThat(m.getDecisionReason()).isNull();
+                });
+    }
+
+    private com.eventticket.api.model.Membership standingOf(TokenPair session) {
+        Me me = exchange(HttpMethod.GET, "/me", session, null, Me.class).getBody();
+        assertThat(me.getMemberships()).hasSize(1);
+        return me.getMemberships().get(0);
+    }
+
     @Test
     @DisplayName("2, 3: creating an organization makes the creator its owner, pending approval")
     void createOrganization() {

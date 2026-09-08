@@ -47,6 +47,17 @@ final class EventMapper {
         // requirements/008 criterion 10: Orders on this Event holding money that should be
         // given back. Here because this is where an organizer looks.
         dto.setRefundRequiredCount((int) detail.refundRequiredCount());
+        // requirements/003 criterion 23: money currently held, which is the number an
+        // organizer checks first and the one a client cannot work out - seats sit in
+        // different tiers, a price change after publishing applies only to later sales, and
+        // a refunded Order stops counting.
+        //
+        // Set unconditionally, and the contract's "absent for Gate Staff" is kept somewhere
+        // stronger than this line: `GetEvent` and `ListEvents` both call
+        // `requireCallerCanManageEvents`, which refuses GATE_STAFF outright, so they never
+        // receive an Event at all. Blanking a field here would be the weaker guarantee of the
+        // two, because it would have to be remembered at every future mapping site.
+        dto.setSalesTotal(toDto(detail.salesTotal()));
         dto.setNotifyCount(detail.notifiedCount());
         return dto;
     }
