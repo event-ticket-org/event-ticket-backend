@@ -272,6 +272,44 @@ class EventLifecycleTest extends ApiTest {
         assertThat(refused.getBody().getDetails()).containsKey("[0].price.amount");
     }
 
+    /**
+     * requirements/003 criterion 3. Reported as "30 VND is an unacceptable price", and it is
+     * worse than that: a real Stripe account answers {@code amount_too_small} - "must convert to
+     * at least 50 cents. ₫30 converts to approximately $0.00" - so the ticket cannot be sold at
+     * all, and the first person who wants exactly one seat is stopped after choosing it.
+     */
+    @Test
+    @DisplayName("a price nobody could be charged is refused where it is set")
+    void aPriceBelowTheFloorIsRefused() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = createEvent(manager, venue.getId(), "Thirty Dong Night", NEXT_MONTH);
+
+        var tooSmall = new PricingTierInput("Standard", new Money(30L, Money.CurrencyEnum.VND));
+        ResponseEntity<Error> refused = exchange(HttpMethod.PUT,
+                "/events/" + event.getId() + "/pricing-tiers", manager, List.of(tooSmall), Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(refused.getBody().getCode()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+        // What to do about it, not merely that it is wrong.
+        assertThat(refused.getBody().getMessage()).contains("0 for a free event");
+        assertThat(refused.getBody().getDetails()).containsEntry("tierName", "Standard");
+    }
+
+    /** The boundary itself, so the floor cannot drift by one without a test noticing. */
+    @Test
+    @DisplayName("the smallest chargeable price is allowed")
+    void theFloorItselfIsAllowed() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = createEvent(manager, venue.getId(), "Just Enough", NEXT_MONTH);
+
+        priceTier(manager, event.getId(), "Standard", 20_000);
+
+        assertThat(publish(manager, event.getId(), Event.class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
+    }
+
     /** Zero is a price. Free events are real, and the contract's minimum is 0 rather than 1. */
     @Test
     @DisplayName("a tier may cost nothing")

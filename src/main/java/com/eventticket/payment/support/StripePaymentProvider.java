@@ -5,6 +5,8 @@ import com.eventticket.payment.domain.PaymentProvider;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.stripe.StripeClient;
+import com.stripe.exception.ApiConnectionException;
+import com.stripe.exception.RateLimitException;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
@@ -260,9 +262,48 @@ public class StripePaymentProvider implements PaymentProvider {
         return value == null || value.isNull() ? null : value.asString();
     }
 
+    /**
+     * requirements/005 criterion 13: a provider that answers is not a provider that is down.
+     *
+     * <p>Every {@link StripeException} used to become "could not be reached. Try again in a
+     * moment." Stripe had usually been reached and had said no - {@code amount_too_small} for a
+     * price below its floor, for instance - and would say it again every time. So a buyer was
+     * invited to keep pressing a button that would never work, while the organizer, whose
+     * pricing caused it, heard nothing at all.
+     *
+     * <p>Split by whether trying again could plausibly change the answer. Reaching Stripe and
+     * being refused is not an outage, and calling it one costs the one thing an error message
+     * is for: knowing whether to wait or to do something.
+     *
+     * <p>Stripe's own words are logged and not returned. They are written for whoever wrote
+     * this code - "must convert to at least 50 cents" is about an account's presentment
+     * currency - and the error envelope is the one place a request's own content should not be
+     * echoed back. The code and the message go to the log, where the organizer's problem is
+     * diagnosable.
+     */
     private ApiException unavailable(String what, StripeException failed) {
-        log.warn("Stripe could not {}: {}", what, failed.getMessage());
+        if (isTransient(failed)) {
+            log.warn("Stripe could not {}: {}", what, failed.getMessage());
+            return new ApiException(ErrorCodes.VALIDATION_FAILED,
+                    "The payment provider could not be reached. Try again in a moment.");
+        }
+        log.warn("Stripe refused to {}: {}; code={}", what, failed.getMessage(), failed.getCode());
         return new ApiException(ErrorCodes.VALIDATION_FAILED,
-                "The payment provider could not be reached. Try again in a moment.");
+                "The payment provider refused this payment. Trying again will not help - "
+                        + "please tell the organizer.");
+    }
+
+    /**
+     * Worth retrying: nothing about the request was wrong, so the same request may succeed.
+     *
+     * <p>A connection that never landed, a rate limit that will lift, and Stripe's own 5xx.
+     * Everything else - an invalid request, a declined card, a key that is not valid, a
+     * permission the account does not have - is an answer, and answers do not change by being
+     * asked again.
+     */
+    static boolean isTransient(StripeException failed) {
+        return failed instanceof ApiConnectionException
+                || failed instanceof RateLimitException
+                || failed instanceof com.stripe.exception.ApiException;
     }
 }
