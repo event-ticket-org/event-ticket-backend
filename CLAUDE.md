@@ -246,7 +246,36 @@ the file and fails if a fallback reappears.
 
 Stripe's two keys are the deliberate exception, written `${STRIPE_SECRET_KEY:}`. Absent means
 there is no Stripe provider at all rather than one that fails on first use, which is what lets
-a fresh clone and the whole suite run with no account.
+a fresh clone and the whole suite run with no account. **Mail is the second exception and the
+same shape**: `MAIL_HOST` absent means there is no mail server, and the application logs its
+mail instead.
+
+## Mail
+
+`EmailTransport` has two implementations and `EmailTransportConfiguration` picks one from
+`MAIL_HOST`. That class exists because the alternative failed silently for the whole life of
+the project: `LoggingEmailTransport` was an unconditional `@Component` and the only
+implementation, its javadoc claimed "AWS SES replaces it in deployed environments", and nothing
+ever did. Every deployment wrote its mail to a log and marked every row `SENT` - so nobody could
+verify an address, nobody could buy a ticket, and the database said delivery had succeeded.
+
+**One `@Bean` with an `if`, not two conditional components.** `@ConditionalOnMissingBean` on a
+scanned `@Component` resolves by whatever order beans happen to be defined in, which is exactly
+how a fallback beats the real thing. One bean and one decision has no ordering to get wrong.
+
+**Read `spring.mail.host` as a property, not off `MailProperties`.** That class lives in Boot's
+auto-configuration and moved from `org.springframework.boot.autoconfigure.mail` to
+`org.springframework.boot.mail.autoconfigure` in Boot 4 - it broke on the first compile. The
+property name is the published contract; the class holding it is not.
+
+**An empty variable is an absent one.** Every mail property is written `${MAIL_HOST:}`, so a
+compose file that declares `MAIL_HOST` with nothing in the environment hands the application an
+empty string rather than nothing. `StringUtils.hasText`, never a null check.
+
+The outbox was already right and is untouched: `OutboxEmailSender` writes the row inside the
+caller's transaction and attempts delivery after it commits, and `DispatchPendingEmails` retries
+five times before leaving the row `FAILED`. A transport is one attempt, and its whole contract is
+to throw when the attempt did not happen.
 
 ## Logging
 
