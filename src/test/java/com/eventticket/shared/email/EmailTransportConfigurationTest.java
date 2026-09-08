@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.mail.autoconfigure.MailHealthContributorAutoConfiguration;
 import org.springframework.boot.mail.autoconfigure.MailSenderAutoConfiguration;
+import org.springframework.boot.mail.health.MailHealthIndicator;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
@@ -54,5 +56,32 @@ class EmailTransportConfigurationTest {
         context.withPropertyValues("spring.mail.host=")
                 .run(started -> assertThat(started).getBean(EmailTransport.class)
                         .isInstanceOf(LoggingEmailTransport.class));
+    }
+
+    /**
+     * Mail is not a liveness condition, and this is the property that says so.
+     *
+     * <p>The mail starter brings a health indicator that opens an SMTP connection, and Boot
+     * treats an empty {@code spring.mail.host} as *present* - so a compose file declaring
+     * {@code MAIL_HOST} with nothing in the environment gets a sender aimed at localhost:587
+     * and an application reporting DOWN while working perfectly. {@code depends_on:
+     * service_healthy} then keeps the frontend from starting at all, which is how this was
+     * found: on a server, with the whole deployment refusing to come up.
+     *
+     * <p>This pins the mechanism - that the property removes the bean. That
+     * {@code application.yml} actually sets it is pinned by {@code DeploymentConfigurationTest},
+     * which is where the file's own guarantees live.
+     */
+    @Test
+    @DisplayName("the disabling property removes the indicator, even with a host configured")
+    void mailIsNotALivenessCondition() {
+        new ApplicationContextRunner()
+                .withConfiguration(AutoConfigurations.of(
+                        MailSenderAutoConfiguration.class,
+                        MailHealthContributorAutoConfiguration.class))
+                .withPropertyValues(
+                        "spring.mail.host=smtp.example.com",
+                        "management.health.mail.enabled=false")
+                .run(started -> assertThat(started).doesNotHaveBean(MailHealthIndicator.class));
     }
 }

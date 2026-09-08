@@ -272,6 +272,16 @@ property name is the published contract; the class holding it is not.
 compose file that declares `MAIL_HOST` with nothing in the environment hands the application an
 empty string rather than nothing. `StringUtils.hasText`, never a null check.
 
+**Mail is not a liveness condition, and `management.health.mail.enabled` is `false`.** The
+starter also brings a health indicator that opens an SMTP connection. Combined with the empty
+variable above it is a trap: a deployment declaring `MAIL_HOST` with nothing in the environment
+gets a sender aimed at `localhost:587` and reports the whole application DOWN, so
+`depends_on: service_healthy` never starts the frontend - a deployment refusing to boot over a
+variable meaning "we do not send mail". It is wrong configured, too: the outbox has already
+committed the row and retries five times, so a provider blip is not an outage and should not ask
+an orchestrator to restart a container selling tickets fine. `email_delivery` records every
+attempt and its error, which answers "did this person hear from us" better than a probe can.
+
 The outbox was already right and is untouched: `OutboxEmailSender` writes the row inside the
 caller's transaction and attempts delivery after it commits, and `DispatchPendingEmails` retries
 five times before leaving the row `FAILED`. A transport is one attempt, and its whole contract is

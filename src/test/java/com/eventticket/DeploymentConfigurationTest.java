@@ -71,4 +71,22 @@ class DeploymentConfigurationTest {
                 .contains("${MAIL_HOST:}")
                 .contains("${MAIL_PASSWORD:}");
     }
+
+    /**
+     * An unreachable mail server is not an outage, and an empty {@code MAIL_HOST} must not
+     * refuse to boot the deployment.
+     *
+     * <p>Boot's mail health indicator opens an SMTP connection, and Boot treats an empty
+     * {@code spring.mail.host} as present - so the ordinary compose case, a declared
+     * {@code MAIL_HOST} with nothing in the environment, aims a sender at localhost:587 and
+     * reports the application DOWN. {@code depends_on: service_healthy} then stops the
+     * frontend ever starting: a whole deployment refusing to come up over a variable that
+     * means "we do not send mail". Found on a server, exactly that way.
+     */
+    @Test
+    @DisplayName("mail is not a liveness condition")
+    void mailHealthIsDisabled() throws IOException {
+        assertThat(Files.readString(APPLICATION_YML))
+                .containsPattern("health:\\s*\\n\\s*mail:[\\s\\S]*?enabled:\\s*false");
+    }
 }
