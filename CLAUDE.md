@@ -350,6 +350,14 @@ long visible = countAllMembershipsAs(aliceId, acme.getId());   // 2, not 3
 The same check applies to any test asserting a guarantee the database is supposed to make:
 plant the violation, watch it fail, remove it. `ModularityTest` was verified this way too.
 
+**Never assert a re-read instant equals an in-memory one.** `OffsetDateTime.now()` carries
+nanoseconds and Postgres `timestamptz` keeps microseconds, so anything that has been through the
+database has been truncated. The trap is that it half-works: a response built from the entity
+still in the persistence context - a PATCH result, say - keeps the nanoseconds, so the same
+assertion passes there and fails on a GET that re-reads. It also passes on a machine whose clock
+happens to land on a round value, which is how one of these passed locally and failed in CI on
+the last three digits. Compare against a value the API has already returned.
+
 The three things worth testing hard, per the KB's NFRs: seat-hold concurrency, redemption
 atomicity across simultaneous scanners, and webhook idempotency. None of them fail under
 mocked repositories.

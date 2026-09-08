@@ -210,8 +210,15 @@ class EventLifecycleTest extends ApiTest {
         assertThat(refused.getBody().getMessage()).contains("into the past");
 
         // And it did not half-happen: the Event is where it was.
+        //
+        // Compared against what the API returned when it was published, not against the
+        // constant it was built from. `NEXT_MONTH` is `OffsetDateTime.now()`, which carries
+        // nanoseconds; Postgres `timestamptz` keeps microseconds, so anything re-read has been
+        // truncated. This assertion passed locally and failed in CI on the last three digits -
+        // the difference being that a PATCH response is built from the entity still in the
+        // persistence context, while this GET goes back to the database.
         assertThat(exchange(HttpMethod.GET, "/events/" + event.getId(), manager, null, Event.class)
-                .getBody().getStartsAt()).isEqualTo(NEXT_MONTH);
+                .getBody().getStartsAt()).isEqualTo(event.getStartsAt());
     }
 
     /**
