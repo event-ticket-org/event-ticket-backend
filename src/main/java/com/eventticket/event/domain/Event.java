@@ -340,6 +340,32 @@ public class Event {
         this.doorsOpenAt = doorsOpenAt;
         this.endsAt = endsAt;
         requireWindowOrdered();
+        requireStillAhead();
+    }
+
+    /**
+     * requirements/003 criterion 9: the new time is still in the future.
+     *
+     * <p>Only once published, because that is when the rule starts costing anybody anything. A
+     * Draft may sit at any date its author likes - publishing refuses a past one and says so,
+     * which is the gate criterion 5 describes and a better place to be stopped than while
+     * typing.
+     *
+     * <p>Once tickets exist it is different, and this was accepted until it was probed: moving a
+     * published Event backwards emails everyone holding a ticket a date that has already been
+     * and gone (criterion 9 notifies them all), and leaves a door that will not open because
+     * its admission window closed before the message arrived. An Event that has already
+     * happened is COMPLETED, which is a status rather than an edit.
+     */
+    private void requireStillAhead() {
+        if (status != Status.PUBLISHED && status != Status.SALES_CLOSED) {
+            return;
+        }
+        if (!startsAt.isAfter(Instant.now())) {
+            throw new ApiException(ErrorCodes.VALIDATION_FAILED,
+                    "A published event cannot be moved into the past. Everyone holding a ticket "
+                            + "would be emailed a date that has already passed.");
+        }
     }
 
     /**
