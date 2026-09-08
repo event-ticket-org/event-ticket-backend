@@ -475,6 +475,28 @@ no minor unit, so the dong is that unit - confirmed against the live API, which 
 `amount_total: 500000` for two 250,000 seats. A multiplication here would charge a hundred
 times the price and look plausible in every log.
 
+**A provider that answers is not a provider that is down.** Every `StripeException` became "The
+payment provider could not be reached. Try again in a moment." Stripe had usually been reached and
+had refused - `amount_too_small` for a price below its floor - and would refuse again every time,
+so a buyer was invited to keep pressing a button that could never work while the organizer whose
+pricing caused it heard nothing. `isTransient` splits on the only question an error message has to
+answer: could the same request succeed later. A connection that never landed, a rate limit, and
+Stripe's own 5xx are worth retrying; an invalid request, a decline, a bad key are answers, and
+answers do not change by being asked again.
+
+Stripe's own words are logged and not returned. "Must convert to at least 50 cents" is about an
+account's presentment currency and is written for whoever wrote this code, and the error envelope
+is the one place a request's own content should not be echoed back.
+
+**A provider's floor is the reason a price has one.** Stripe refuses below roughly 12.500 ₫ today,
+so a tier at 30 ₫ is not cheap, it is unsellable - and the smallest possible Order is one seat, so
+the first person who wants exactly one meets it. `app.pricing.minimum-amount` refuses it in
+`SetPricingTiers`, where the organizer is setting the number, rather than at checkout where a buyer
+would discover it. It is configuration and not a constant because the provider's floor is
+denominated in dollars: a limit tracking a foreign currency will eventually cross one that does not.
+Zero is not small, it is free, and a provider asked for nothing does not refuse - checked against
+the real account rather than assumed.
+
 **The Stripe bean is conditional on its key.** No key, no provider, and `StartPayment` says
 there is no provider by that name - which is true. The suite and a fresh clone need no account
 and no network.
