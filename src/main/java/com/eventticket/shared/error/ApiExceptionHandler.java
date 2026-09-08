@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.ErrorResponse;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -43,6 +44,55 @@ public class ApiExceptionHandler {
         e.getBindingResult().getFieldErrors()
                 .forEach(f -> body.putDetailsItem(f.getField(), f.getDefaultMessage()));
         return ResponseEntity.badRequest().body(body);
+    }
+
+    /**
+     * The same answer, for the constraint violations Spring reports a different way.
+     *
+     * <p>A request body that is a top-level array is validated by the method interceptor rather
+     * than by the body resolver - `@Valid @RequestBody List<@Valid PricingTierInput>` becomes an
+     * AOP check around the controller method - and that path throws
+     * {@link ConstraintViolationException} instead of {@link MethodArgumentNotValidException}.
+     * Nothing was mapping it, so it fell to the catch-all below: a caller sending a price the
+     * contract forbids got 500 and "the request could not be completed", and the log got an
+     * ERROR with a stack trace. Validation was working the whole time and only the answer was
+     * wrong, which is the sort of bug that reads as a missing feature.
+     *
+     * <p>Deliberately identical to the handler above - same code, same message, same 400, same
+     * map of field to reason. Whether an endpoint takes an object or an array is our
+     * implementation detail, and it was leaking as the difference between an answer a caller
+     * could act on and one they could not.
+     *
+     * <p>The property path is trimmed to the part that names a field. Hibernate reports
+     * {@code eventsEventIdPricingTiersPut.pricingTierInput[0].price.amount}: the first two nodes
+     * are the generated method and its parameter, which are ours and mean nothing to whoever
+     * sent the request.
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Error> handle(ConstraintViolationException e) {
+        Error body = new Error(ErrorCode.VALIDATION_FAILED, "The request failed validation.");
+        e.getConstraintViolations()
+                .forEach(v -> body.putDetailsItem(fieldOf(v.getPropertyPath().toString()),
+                        v.getMessage()));
+        return ResponseEntity.badRequest().body(body);
+    }
+
+    /**
+     * The part of the path that names something the caller sent.
+     *
+     * <p>{@code eventsEventIdPricingTiersPut.pricingTierInput[0].price.amount} becomes
+     * {@code [0].price.amount}. The method and the parameter name are generated and mean
+     * nothing outside this codebase; the index is kept, because a table of prices needs to say
+     * which row is wrong.
+     */
+    private static String fieldOf(String propertyPath) {
+        String[] nodes = propertyPath.split("\\.", 3);
+        if (nodes.length < 3) {
+            return propertyPath;
+        }
+        int bracket = nodes[1].indexOf('[');
+        String index = bracket < 0 ? "" : nodes[1].substring(bracket);
+        return index + (index.isEmpty() ? "" : ".") + nodes[2];
     }
 
     /**

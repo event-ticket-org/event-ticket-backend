@@ -312,6 +312,24 @@ of exception classes - except `HttpMessageNotReadableException` and
 them carry a new error code: a client branches on the code for domain outcomes, and a request
 that never reached a use case has no outcome.
 
+**A bad request body arrives as one of two exceptions, and only one of them was mapped.** An
+object body fails as `MethodArgumentNotValidException`, from the body resolver. A body that is a
+top-level array fails as `ConstraintViolationException`, from `MethodValidationInterceptor` -
+`@Valid @RequestBody List<@Valid T>` becomes an AOP check around the controller method rather
+than work the resolver does. Nothing mapped the second, so a price of -1 answered 500 and "the
+request could not be completed" and wrote an ERROR with a stack trace, while the identical
+mistake in an object body answered 400 and named the field.
+
+Worth knowing because it reads as a missing feature and is not: `Money.amount` has carried
+`minimum: 0` since the beginning and validation was running the whole time. Only the answer was
+wrong. The first fix attempted here was a hand-written validator for array bodies, built on the
+assumption that the elements were never checked - the stack trace said otherwise, and the real
+change was eight lines in the handler.
+
+Its property path is `method.parameter[0].price.amount`. Trim to `[0].price.amount`: the method
+and parameter names are generated and mean nothing to a caller, and the index is the part that
+says which row of the table to look at.
+
 Name a new servlet filter for what it does, not `RequestContextFilter`: Spring Boot's WebMvc
 auto-configuration registers a bean of that name and a second one stops the app booting.
 
@@ -331,6 +349,14 @@ long visible = countAllMembershipsAs(aliceId, acme.getId());   // 2, not 3
 
 The same check applies to any test asserting a guarantee the database is supposed to make:
 plant the violation, watch it fail, remove it. `ModularityTest` was verified this way too.
+
+**Never assert a re-read instant equals an in-memory one.** `OffsetDateTime.now()` carries
+nanoseconds and Postgres `timestamptz` keeps microseconds, so anything that has been through the
+database has been truncated. The trap is that it half-works: a response built from the entity
+still in the persistence context - a PATCH result, say - keeps the nanoseconds, so the same
+assertion passes there and fails on a GET that re-reads. It also passes on a machine whose clock
+happens to land on a round value, which is how one of these passed locally and failed in CI on
+the last three digits. Compare against a value the API has already returned.
 
 The three things worth testing hard, per the KB's NFRs: seat-hold concurrency, redemption
 atomicity across simultaneous scanners, and webhook idempotency. None of them fail under

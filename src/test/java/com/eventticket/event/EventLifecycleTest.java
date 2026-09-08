@@ -14,6 +14,9 @@ import com.eventticket.api.model.SeatAvailability;
 import com.eventticket.api.model.SeatMap;
 import com.eventticket.api.model.TokenPair;
 import com.eventticket.api.model.Venue;
+import com.eventticket.api.model.Money;
+import com.eventticket.api.model.PricingTierInput;
+import java.util.List;
 import com.eventticket.support.ApiTest;
 import com.eventticket.support.SeatMaps;
 import java.time.OffsetDateTime;
@@ -178,6 +181,109 @@ class EventLifecycleTest extends ApiTest {
         assertThat(updated.getEndsAt()).isEqualTo(moved.plusHours(4));
         // Nobody holds a ticket yet, so the honest count is zero rather than absent.
         assertThat(updated.getNotifyCount()).isZero();
+    }
+
+    /**
+     * requirements/003 criterion 9. Found by probing the deployed server, which accepted it.
+     *
+     * <p>The damage is criterion 9's own promise: moving a published Event emails everybody
+     * holding a ticket, so this mails them a date that has already been and gone - and leaves a
+     * door that will not open, because the admission window closed before the message arrived.
+     */
+    @Test
+    @DisplayName("a published event cannot be moved into the past")
+    void aPublishedEventCannotGoBackwards() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = publishedEvent(manager, venue, "Live in Saigon");
+
+        OffsetDateTime lastWeek = OffsetDateTime.now().minus(7, ChronoUnit.DAYS);
+        EventPatch backwards = new EventPatch();
+        backwards.setStartsAt(lastWeek);
+        backwards.setDoorsOpenAt(lastWeek.minusHours(1));
+        backwards.setEndsAt(lastWeek.plusHours(3));
+
+        ResponseEntity<Error> refused = exchange(HttpMethod.PATCH, "/events/" + event.getId(),
+                manager, backwards, Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(refused.getBody().getMessage()).contains("into the past");
+
+        // And it did not half-happen: the Event is where it was.
+        //
+        // Compared against what the API returned when it was published, not against the
+        // constant it was built from. `NEXT_MONTH` is `OffsetDateTime.now()`, which carries
+        // nanoseconds; Postgres `timestamptz` keeps microseconds, so anything re-read has been
+        // truncated. This assertion passed locally and failed in CI on the last three digits -
+        // the difference being that a PATCH response is built from the entity still in the
+        // persistence context, while this GET goes back to the database.
+        assertThat(exchange(HttpMethod.GET, "/events/" + event.getId(), manager, null, Event.class)
+                .getBody().getStartsAt()).isEqualTo(event.getStartsAt());
+    }
+
+    /**
+     * A Draft is deliberately left alone. Criterion 5 makes publishing the gate, and being
+     * stopped there with a reason beats being stopped while typing a date.
+     */
+    @Test
+    @DisplayName("a draft may sit in the past, and is refused at publish rather than at edit")
+    void aDraftMaySitInThePast() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        OffsetDateTime lastWeek = OffsetDateTime.now().minus(7, ChronoUnit.DAYS);
+
+        var input = new com.eventticket.api.model.EventInput("Last Tuesday", venue.getId(), lastWeek);
+        input.setDoorsOpenAt(lastWeek.minusHours(1));
+        input.setEndsAt(lastWeek.plusHours(3));
+        Event draft = exchange(HttpMethod.POST, "/events", manager, input, Event.class).getBody();
+        assertThat(draft.getStatus()).isEqualTo(EventStatus.DRAFT);
+
+        priceTier(manager, draft.getId(), "Standard", 250_000);
+        ResponseEntity<Error> refused = publish(manager, draft.getId(), Error.class);
+
+        assertThat(refused.getBody().getCode()).isEqualTo(ErrorCode.PUBLISH_PRECONDITION_FAILED);
+        assertThat(refused.getBody().getMessage()).contains("past");
+    }
+
+    /**
+     * The contract has said {@code minimum: 0} on {@code Money.amount} since the beginning, and
+     * the server answered a negative price with 500 and a stack trace.
+     *
+     * <p>The cause is not this endpoint. A request body that is a top-level array is not
+     * validated element by element: the generated signature reads
+     * {@code List<@Valid PricingTierInput>}, and Spring validates the list - which has no
+     * constraints - and never descends into it. So the assertions below are about the answer a
+     * caller gets, and they are deliberately the same assertions an object body would satisfy.
+     */
+    @Test
+    @DisplayName("a price the contract forbids is refused as a bad request, not as a server error")
+    void anArrayBodyIsCheckedElementByElement() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = createEvent(manager, venue.getId(), "Live in Saigon", NEXT_MONTH);
+
+        var negative = new PricingTierInput("Standard", new Money(-5_000L, Money.CurrencyEnum.VND));
+        ResponseEntity<Error> refused = exchange(HttpMethod.PUT,
+                "/events/" + event.getId() + "/pricing-tiers", manager, List.of(negative), Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(refused.getBody().getCode()).isEqualTo(ErrorCode.VALIDATION_FAILED);
+        // Which element and which field, because a table of prices needs to know which row.
+        assertThat(refused.getBody().getDetails()).containsKey("[0].price.amount");
+    }
+
+    /** Zero is a price. Free events are real, and the contract's minimum is 0 rather than 1. */
+    @Test
+    @DisplayName("a tier may cost nothing")
+    void aTierMayBeFree() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = createEvent(manager, venue.getId(), "Free Night", NEXT_MONTH);
+
+        priceTier(manager, event.getId(), "Standard", 0);
+
+        assertThat(publish(manager, event.getId(), Event.class).getStatusCode())
+                .isEqualTo(HttpStatus.OK);
     }
 
     @Test
