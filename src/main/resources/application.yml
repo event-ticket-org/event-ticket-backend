@@ -71,6 +71,16 @@ app:
     # constant: the provider's floor is theirs, and this market's idea of a real ticket price
     # is not ours.
     minimum-amount: ${MINIMUM_TICKET_PRICE:20000}
+  recovery:
+    # nfr.md, Account recovery. Two limits with different jobs: the per-address one stops a
+    # mailbox being buried, and the total one is what stops this endpoint being a way to send
+    # mail to strangers at scale. The total replaces a per-caller limit, which this deployment
+    # cannot keep - every request arrives from the reverse proxy, so a limit keyed on the
+    # caller is one global limit that a single attacker trips to lock everybody out.
+    requests-per-hour-per-address: ${RESET_REQUESTS_PER_HOUR:5}
+    burst-per-address: ${RESET_BURST_PER_ADDRESS:3}
+    emails-per-hour: ${RESET_EMAILS_PER_HOUR:60}
+    burst-total: ${RESET_BURST_TOTAL:30}
   email:
     retry-interval: PT1M
     # Who the mail is from, which is not necessarily who it logs in as: a provider may permit

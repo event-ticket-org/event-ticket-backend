@@ -99,6 +99,15 @@ public class AppUser {
         this.platformAdmin = true;
     }
 
+    /**
+     * requirements/001 criterion 18. Distinct from {@link #setPassword} because that one is
+     * an invited User completing registration and takes the display name they are choosing at
+     * the same time; this one is somebody who already has both and is replacing one of them.
+     */
+    public void changePassword(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
     public void markEmailVerified() {
         this.emailVerified = true;
     }

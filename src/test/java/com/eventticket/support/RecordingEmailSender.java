@@ -59,8 +59,23 @@ public class RecordingEmailSender implements EmailTransport {
 
     /** The verification token from the most recent email to this address. */
     public synchronized Optional<String> verificationTokenFor(String toAddress) {
+        return tokenFrom(toAddress, "Confirm your email address");
+    }
+
+    /**
+     * The reset token from the most recent reset email to this address.
+     *
+     * <p>Selected by subject rather than by being the latest link, because an account being
+     * recovered receives two emails in quick succession and only one of them carries a link.
+     */
+    public synchronized Optional<String> resetTokenFor(String toAddress) {
+        return tokenFrom(toAddress, "Reset your password");
+    }
+
+    private synchronized Optional<String> tokenFrom(String toAddress, String subject) {
         return sent.reversed().stream()
                 .filter(m -> m.to().equalsIgnoreCase(toAddress))
+                .filter(m -> m.subject().equals(subject))
                 .map(m -> TOKEN.matcher(m.body()))
                 .filter(Matcher::find)
                 .map(m -> m.group(1))

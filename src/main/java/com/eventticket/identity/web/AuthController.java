@@ -1,11 +1,13 @@
 package com.eventticket.identity.web;
 
 import com.eventticket.api.AuthApi;
+import com.eventticket.api.model.ForgotPasswordRequest;
 import com.eventticket.api.model.LoginRequest;
 import com.eventticket.api.model.Me;
 import com.eventticket.api.model.OrganizationStatus;
 import com.eventticket.api.model.RefreshRequest;
 import com.eventticket.api.model.RegisterRequest;
+import com.eventticket.api.model.ResetPasswordRequest;
 import com.eventticket.api.model.SwitchOrganizationRequest;
 import com.eventticket.api.model.TokenPair;
 import com.eventticket.api.model.VerifyEmailRequest;
@@ -20,6 +22,8 @@ import com.eventticket.identity.usecase.GetMe;
 import com.eventticket.identity.usecase.Login;
 import com.eventticket.identity.usecase.Logout;
 import com.eventticket.identity.usecase.RefreshSession;
+import com.eventticket.identity.usecase.RequestPasswordReset;
+import com.eventticket.identity.usecase.ResetPassword;
 import com.eventticket.identity.usecase.RegisterUser;
 import com.eventticket.identity.usecase.SwitchOrganization;
 import com.eventticket.identity.usecase.VerifyEmail;
@@ -42,10 +46,13 @@ public class AuthController implements AuthApi {
     private final Logout logout;
     private final SwitchOrganization switchOrganization;
     private final GetMe getMe;
+    private final RequestPasswordReset requestPasswordReset;
+    private final ResetPassword resetPassword;
 
     public AuthController(RegisterUser registerUser, VerifyEmail verifyEmail, Login login,
                    RefreshSession refreshSession, Logout logout,
-                   SwitchOrganization switchOrganization, GetMe getMe) {
+                   SwitchOrganization switchOrganization, GetMe getMe,
+                   RequestPasswordReset requestPasswordReset, ResetPassword resetPassword) {
         this.registerUser = registerUser;
         this.verifyEmail = verifyEmail;
         this.login = login;
@@ -53,6 +60,8 @@ public class AuthController implements AuthApi {
         this.logout = logout;
         this.switchOrganization = switchOrganization;
         this.getMe = getMe;
+        this.requestPasswordReset = requestPasswordReset;
+        this.resetPassword = resetPassword;
     }
 
     @Override
@@ -65,6 +74,24 @@ public class AuthController implements AuthApi {
     @Override
     public ResponseEntity<TokenPair> authVerifyEmailPost(VerifyEmailRequest request) {
         return ResponseEntity.ok(tokenPair(verifyEmail.verify(request.getToken())));
+    }
+
+    /**
+     * requirements/001 criterion 17. Always 202, and the body says nothing: whether that
+     * address has an account is exactly what this endpoint will not report, and the use case
+     * is written so that there is no path here that could.
+     */
+    @Override
+    public ResponseEntity<Void> authForgotPasswordPost(ForgotPasswordRequest request) {
+        requestPasswordReset.request(request.getEmail());
+        return ResponseEntity.accepted().build();
+    }
+
+    /** Tokens, because whoever followed the link has just proved they own the address. */
+    @Override
+    public ResponseEntity<TokenPair> authResetPasswordPost(ResetPasswordRequest request) {
+        return ResponseEntity.ok(tokenPair(
+                resetPassword.reset(request.getToken(), request.getPassword())));
     }
 
     @Override
