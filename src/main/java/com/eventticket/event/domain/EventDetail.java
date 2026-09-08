@@ -1,7 +1,9 @@
 package com.eventticket.event.domain;
 
+import com.eventticket.shared.money.Money;
+
 /**
- * An Event together with the prices a manager needs to see beside it.
+ * An Event together with the prices and figures a manager needs to see beside it.
  *
  * <p>{@code notifiedCount} is set only by the one operation that notifies anybody - moving a
  * published Event's start time - and is null everywhere else, which is how the contract's
@@ -9,14 +11,15 @@ package com.eventticket.event.domain;
  * response emailed", not a standing property of the Event.
  */
 public record EventDetail(Event event, EventPricing pricing, Integer notifiedCount,
-                          long soldCount, long refundRequiredCount) {
+                          long soldCount, long refundRequiredCount, Money salesTotal) {
 
     public static EventDetail of(Event event, EventPricing pricing) {
-        return new EventDetail(event, pricing, null, 0, 0);
+        return new EventDetail(event, pricing, null, 0, 0, Money.vnd(0));
     }
 
-    public EventDetail withCounts(long soldCount, long refundRequiredCount) {
-        return new EventDetail(event, pricing, notifiedCount, soldCount, refundRequiredCount);
+    public EventDetail withCounts(long soldCount, long refundRequiredCount, Money salesTotal) {
+        return new EventDetail(event, pricing, notifiedCount, soldCount, refundRequiredCount,
+                salesTotal);
     }
 
     /**
@@ -25,6 +28,7 @@ public record EventDetail(Event event, EventPricing pricing, Integer notifiedCou
      * turned every patch that does not move a start time into a 500.
      */
     public EventDetail notifying(Integer notified) {
-        return new EventDetail(event, pricing, notified, soldCount, refundRequiredCount);
+        return new EventDetail(event, pricing, notified, soldCount, refundRequiredCount,
+                salesTotal);
     }
 }

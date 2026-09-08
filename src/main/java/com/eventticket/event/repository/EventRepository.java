@@ -3,6 +3,7 @@ package com.eventticket.event.repository;
 import com.eventticket.event.domain.Event;
 import com.eventticket.organization.domain.Organization;
 import com.eventticket.shared.error.ApiException;
+import com.eventticket.shared.money.Money;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
@@ -118,15 +119,32 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
      *
      * <p>A REFUNDED Order is not counted as sold. Its seats went back on sale, so counting them
      * would tell an organizer they have less capacity left than they do.
+     *
+     * <p>The money rides along in the same aggregate rather than in a second query, because it
+     * is the same grouping over the same rows and is read on the same screens
+     * (requirements/003 criterion 23). It filters on PAID for the reason the sold count does:
+     * a refunded Order has given the money back, and a total that still counted it would tell
+     * an organizer they hold funds they do not.
      */
     @Query(value = """
-           select o.event_id                                          as eventId,
-                  count(s.id) filter (where o.status = 'PAID')         as sold,
-                  count(distinct o.id) filter (where o.refund_required) as refundRequired
-             from ticket_order o
-             left join order_seat s on s.order_id = o.id
-            where o.event_id in (:eventIds)
-            group by o.event_id
+           with per_order as (
+               select o.event_id, o.id, o.status, o.refund_required,
+                      o.total_amount, o.currency,
+                      count(s.id) as seats
+                 from ticket_order o
+                 left join order_seat s on s.order_id = o.id
+                where o.event_id in (:eventIds)
+                group by o.event_id, o.id, o.status, o.refund_required,
+                         o.total_amount, o.currency
+           )
+           select event_id                                                  as eventId,
+                  coalesce(sum(seats) filter (where status = 'PAID'), 0)     as sold,
+                  count(*) filter (where refund_required)                    as refundRequired,
+                  coalesce(sum(total_amount) filter (where status = 'PAID'), 0)
+                                                                            as salesTotal,
+                  max(currency) filter (where status = 'PAID')               as salesCurrency
+             from per_order
+            group by event_id
            """, nativeQuery = true)
     public List<EventCounts> countsFor(@Param("eventIds") Collection<UUID> eventIds);
 
@@ -137,6 +155,23 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
         long getSold();
 
         long getRefundRequired();
+
+        long getSalesTotal();
+
+        /** Null when the Event has sold nothing, because there is then no Order to take it from. */
+        String getSalesCurrency();
+
+        /**
+         * The money as a {@link Money}, with the null currency handled once here rather than
+         * at each of the four call sites. An Event that has sold nothing has taken zero, and
+         * zero of no particular currency is still zero dong in a system whose contract closes
+         * the enum at one value.
+         */
+        public default Money salesTotal() {
+            return new Money(getSalesTotal(), getSalesCurrency() == null
+                    ? Money.Currency.VND
+                    : Money.Currency.valueOf(getSalesCurrency()));
+        }
     }
 
     public default Event findOrThrow(UUID id) {

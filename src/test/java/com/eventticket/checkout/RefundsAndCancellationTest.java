@@ -9,6 +9,7 @@ import com.eventticket.api.model.EventCancellation;
 import com.eventticket.api.model.EventStatus;
 import com.eventticket.api.model.InviteMemberRequest;
 import com.eventticket.api.model.Membership;
+import com.eventticket.api.model.Money;
 import com.eventticket.api.model.Order;
 import com.eventticket.api.model.OrderPage;
 import com.eventticket.api.model.OrderStatus;
@@ -374,6 +375,78 @@ class RefundsAndCancellationTest extends ApiTest {
                 .contains("ORDER_REFUND_STARTED", "ORDER_REFUNDED", "EVENT_CANCELLED");
     }
 
+    /**
+     * requirements/003 criterion 23. Two failure modes, and one test that would catch either.
+     *
+     * <p>The first is arithmetic. The query behind this joins Orders to their seats, so an
+     * Order appears once per seat - and summing its total over that join multiplies it by the
+     * number of seats on it. Every order here has more than one seat, so a total built that way
+     * cannot pass: 2 seats and 3 seats at 250,000 would report 3,250,000 rather than 1,250,000.
+     *
+     * <p>The second is the point of the criterion. A refunded Order has given the money back,
+     * and a figure that still counted it would tell an organizer they hold funds they do not.
+     */
+    @Test
+    @DisplayName("an event reports the money it is holding, not the money it ever took")
+    void salesTotalIsWhatIsHeld() {
+        Organizer organizer = organizer();
+        UUID eventId = organizer.eventId();
+
+        assertThat(eventOf(organizer.manager(), eventId).getSalesTotal())
+                .as("nothing sold yet")
+                .satisfies(total -> {
+                    assertThat(total.getAmount()).isZero();
+                    assertThat(total.getCurrency()).isEqualTo(Money.CurrencyEnum.VND);
+                });
+
+        TokenPair first = signUp("first@example.com");
+        Order twoSeats = buyAndPay(first, eventId, seatIdsOf(eventId, 2));
+        TokenPair second = signUp("second@example.com");
+        buyAndPay(second, eventId, seatIdsOf(eventId, 3));
+
+        assertThat(eventOf(organizer.manager(), eventId))
+                .as("five seats at 250,000, summed once each")
+                .satisfies(event -> {
+                    assertThat(event.getSalesTotal().getAmount()).isEqualTo(1_250_000L);
+                    assertThat(event.getSoldCount()).isEqualTo(5);
+                });
+
+        Refund started = refund(organizer.manager(), twoSeats.getId(), "They could not come.");
+        // Still held while the provider has only been asked: the money has not moved yet, and
+        // the Order is still PAID. Dropping it here would be the mirror of the bug above.
+        assertThat(eventOf(organizer.manager(), eventId).getSalesTotal().getAmount())
+                .as("a refund that has not settled has not given anything back")
+                .isEqualTo(1_250_000L);
+
+        deliverRefundWebhook(refundRefOf(started), "REFUNDED");
+
+        assertThat(eventOf(organizer.manager(), eventId))
+                .as("the settled refund is no longer money this event holds")
+                .satisfies(event -> {
+                    assertThat(event.getSalesTotal().getAmount()).isEqualTo(750_000L);
+                    assertThat(event.getSoldCount()).isEqualTo(3);
+                });
+    }
+
+    /**
+     * requirements/007 criterion 13: Gate Staff see no sales figures or revenue anywhere.
+     *
+     * <p>Kept by the endpoint refusing them rather than by the mapper blanking a field, which
+     * is the stronger of the two - a blanked field has to be remembered at every future mapping
+     * site, and a refusal cannot be forgotten.
+     */
+    @Test
+    @DisplayName("gate staff are not shown an event at all, so they are not shown its takings")
+    void gateStaffSeeNoTakings() {
+        Organizer organizer = organizer();
+        buyAndPay(signUp("buyer@example.com"), organizer.eventId(), seatIdsOf(organizer.eventId(), 2));
+
+        var refused = exchange(HttpMethod.GET, "/events/" + organizer.eventId(),
+                gateStaffOf(organizer), null, Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    }
+
     // --- the scaffolding -------------------------------------------------------------------
 
     private record Organizer(TokenPair manager, UUID eventId,
@@ -411,6 +484,10 @@ class RefundsAndCancellationTest extends ApiTest {
 
     private RefundRequest reason(String reason) {
         return new RefundRequest(reason);
+    }
+
+    private Event eventOf(TokenPair session, UUID eventId) {
+        return exchange(HttpMethod.GET, "/events/" + eventId, session, null, Event.class).getBody();
     }
 
     private Refund refund(TokenPair session, UUID orderId, String reason) {

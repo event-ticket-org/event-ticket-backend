@@ -345,6 +345,14 @@ database has not been told about yet.
 
 ## Queries
 
+**An aggregate over a join counts the join, not the thing.** `countsFor` reads seats and money
+for a page of Events in one query, and it joins `ticket_order` to `order_seat` - so an Order
+appears once per seat, and `sum(o.total_amount)` over that join multiplies every Order by how
+many seats it has. Two seats and three seats at 250,000 reports 3,250,000 instead of 1,250,000:
+a plausible number, wrong, in the field an organizer checks first. Aggregate the Orders in a CTE
+first, then sum. The test buys multi-seat Orders for exactly this reason - single-seat Orders
+would pass either version.
+
 **Postgres cannot infer the type of a bare parameter in `? is null`.** A query written the
 obvious way for an optional filter —
 

@@ -143,7 +143,7 @@ public class SetEventCover {
         EventDetail detail = EventDetail.of(event,
                 EventPricing.of(event, map, tiers.findByEventId(eventId)));
         return events.countsFor(java.util.List.of(eventId)).stream().findFirst()
-                .map(counts -> detail.withCounts(counts.getSold(), counts.getRefundRequired()))
+                .map(counts -> detail.withCounts(counts.getSold(), counts.getRefundRequired(), counts.salesTotal()))
                 .orElse(detail);
     }
 }

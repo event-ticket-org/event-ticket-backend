@@ -41,11 +41,14 @@ public class GetMe {
         AppUser user = users.findOrThrow(userId);
         List<Membership> held = memberships.findByUserId(userId);
 
-        Map<UUID, String> names = organizations
+        // The whole Organization, not just its name: a Membership reports where its
+        // Organization stands as well as what it is called (requirements/001 criterion 16),
+        // and these rows were already being read.
+        Map<UUID, Organization> byId = organizations
                 .findAllById(held.stream().map(Membership::organizationId).toList())
                 .stream()
-                .collect(Collectors.toMap(Organization::id, Organization::name, (a, b) -> a));
+                .collect(Collectors.toMap(Organization::id, Function.identity(), (a, b) -> a));
 
-        return new MeView(user, held, names);
+        return new MeView(user, held, byId);
     }
 }
