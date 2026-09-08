@@ -63,6 +63,14 @@ app:
     # requirements/004 criterion 5. The buyer is shown this counting down.
     hold-window: PT10M
     expiry-sweep: PT1M
+  pricing:
+    # requirements/003 criterion 3: a price is free, or one somebody can actually be charged.
+    # Deliberately above the payment provider's own floor - Stripe refuses below roughly
+    # 12.500 VND today, and that number is denominated in dollars, so a limit tracking a
+    # foreign currency will eventually cross one that does not. Configuration rather than a
+    # constant: the provider's floor is theirs, and this market's idea of a real ticket price
+    # is not ours.
+    minimum-amount: ${MINIMUM_TICKET_PRICE:20000}
   email:
     retry-interval: PT1M
     # Who the mail is from, which is not necessarily who it logs in as: a provider may permit
