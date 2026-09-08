@@ -46,7 +46,7 @@ public class VerifyEmail {
                 .filter(t -> t.isUsable(now))
                 .orElseThrow(() -> {
                     log.warn("Email verification refused: token expired, unknown or already used");
-                    return new ApiException(ErrorCodes.NOT_FOUND,
+                    return ApiException.gone(
                             "That verification link has expired or has already been used.");
                 });
 

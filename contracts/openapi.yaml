@@ -68,6 +68,43 @@ paths:
         '200': { $ref: '#/components/responses/Tokens' }
         '410': { description: Verification token expired or already used }
 
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Ask for a password reset link
+      description: >
+        Always 202, whether or not the address has an account (requirements/001 criterion 17).
+        The form is public, so an answer that distinguished the two cases would report who has
+        an account here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPasswordRequest' }
+      responses:
+        '202': { description: 'If that address has an account, a reset link has been sent' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Set a new password from a reset link
+      description: >
+        Sets the password, marks the address verified, and ends every other session
+        (requirements/001 criteria 18 and 19). Answers with tokens, because whoever followed
+        the link has just proved they own the address and is not asked to prove it again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPasswordRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Tokens' }
+        '410': { description: 'Reset link expired, already used, or superseded by a newer one' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /auth/login:
     post:
       tags: [Auth]
@@ -1698,6 +1735,17 @@ components:
       required: [token]
       properties:
         token: { type: string }
+    ForgotPasswordRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+    ResetPasswordRequest:
+      type: object
+      required: [token, password]
+      properties:
+        token: { type: string }
+        password: { type: string, minLength: 12 }
     LoginRequest:
       type: object
       required: [email, password]

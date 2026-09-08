@@ -35,7 +35,7 @@ public class ApiExceptionHandler {
         log.debug("Request refused code={}", e.code());
         Error body = new Error(ErrorCode.fromValue(e.code()), e.getMessage());
         e.details().forEach(body::putDetailsItem);
-        return ResponseEntity.status(statusFor(e.code())).body(body);
+        return ResponseEntity.status(e.isGone() ? HttpStatus.GONE : statusFor(e.code())).body(body);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

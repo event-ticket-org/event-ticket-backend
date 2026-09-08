@@ -36,7 +36,10 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/register", "/auth/verify-email",
-                                "/auth/login", "/auth/refresh").permitAll()
+                                "/auth/login", "/auth/refresh",
+                                // Recovery is for somebody who cannot sign in, so it cannot
+                                // require being signed in (requirements/001 criteria 17, 18).
+                                "/auth/forgot-password", "/auth/reset-password").permitAll()
                         .requestMatchers("/public/**", "/webhooks/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
                         .anyRequest().authenticated())

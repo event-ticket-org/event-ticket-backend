@@ -369,6 +369,21 @@ a raw SQL statement in the same method cannot see the row — `BeginCheckout` ne
 `saveAndFlush` before `hold_seats`, or the hold's foreign key fails against an order the
 database has not been told about yet.
 
+**`@Modifying(clearAutomatically = true)` without `flushAutomatically = true` throws away
+uncommitted work.** Clearing the persistence context discards pending changes rather than
+writing them, and `flushAutomatically` defaults to false - so a use case that changes an entity
+and then runs a bulk update loses the change and commits a transaction that did half its job.
+
+`ResetPassword` is exactly that shape: set the password, mark the address verified, then revoke
+every refresh token. The revoke cleared the context and both mutations vanished. It surfaced as
+three failing tests saying the new password did not work and the link could be used twice,
+which reads like a bug in the reset and is a bug in the annotation. Two of the four
+`@Modifying` queries here already paired the flags; `revokeAllFor` did not, and had been safe
+only because its other caller - `Logout` - changes nothing first.
+
+Pair the two flags every time. The cost of the flush is nothing next to the cost of finding
+this.
+
 ## Queries
 
 **An aggregate over a join counts the join, not the thing.** `countsFor` reads seats and money

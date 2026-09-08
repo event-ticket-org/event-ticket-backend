@@ -106,7 +106,8 @@ public abstract class ApiTest {
         // Order matters: memberships reference both sides.
         jdbc.execute("truncate audit_entry, scan, email_delivery, payment_event, payment_session, "
                 + "ticket, order_seat, ticket_order, event_seat, event_pricing_tier, event, "
-                + "venue, membership, refresh_token, email_verification_token, organization, "
+                + "venue, membership, refresh_token, email_verification_token, password_reset_token, "
+                + "organization, "
                 + "app_user cascade");
     }
 
