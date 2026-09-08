@@ -130,3 +130,25 @@ management:
     web:
       exposure:
         include: health,info
+  health:
+    mail:
+      # Off, and this is a decision rather than noise reduction.
+      #
+      # Adding the mail starter also brings a health indicator that opens an SMTP connection,
+      # and Boot treats an *empty* `spring.mail.host` as present - so a deployment that
+      # declares MAIL_HOST and leaves it blank, which is the ordinary compose case, gets a
+      # sender aimed at localhost:587 and an application that reports DOWN. Everything works;
+      # the health check says otherwise, and `depends_on: service_healthy` then keeps the
+      # frontend from ever starting. That is a whole deployment refusing to boot over a
+      # variable that means "we do not send mail".
+      #
+      # It is wrong in the configured case too. A ticketing platform whose mail provider is
+      # briefly unreachable is not down: `OutboxEmailSender` has already committed the row
+      # and `DispatchPendingEmails` retries five times. Reporting DOWN there asks an
+      # orchestrator to restart or drain a container that is selling tickets perfectly well,
+      # because Gmail hiccupped.
+      #
+      # What mail is doing is visible where it belongs - the `email_delivery` table records
+      # every attempt, its error and its status, which answers "did this person hear from us"
+      # far better than a liveness probe can.
+      enabled: false
