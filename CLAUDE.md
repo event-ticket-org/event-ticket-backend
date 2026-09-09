@@ -358,6 +358,16 @@ assertion passes there and fails on a GET that re-reads. It also passes on a mac
 happens to land on a round value, which is how one of these passed locally and failed in CI on
 the last three digits. Compare against a value the API has already returned.
 
+**A test fixture that fills in defaults can hide the case under test.** `createEvent`'s
+four-argument overload supplies a whole admission window, so the first version of
+`halfAWindowIsStillOrdered` created an Event *with* an end time and proved the path that
+already worked. It passed against the bug it was written for, and only planting the old rule
+back showed it. Pass the absent values explicitly when absence is the point.
+
+That is the second test in this project that could not fail for its stated reason, and both
+were found the same way. Planting is not a formality after the test goes green - it is the
+only thing that says the test is attached to the behaviour.
+
 The three things worth testing hard, per the KB's NFRs: seat-hold concurrency, redemption
 atomicity across simultaneous scanners, and webhook idempotency. None of them fail under
 mocked repositories.
