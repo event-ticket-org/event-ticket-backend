@@ -132,8 +132,11 @@ public class EventRepositoryImpl implements EventQueries {
                         .append("salesAmount", sumWhenPaid("$totalAmount"))
                         .append("refundRequired", new org.bson.Document("$sum",
                                 new org.bson.Document("$cond", List.of("$refundRequired", 1, 0))))
+                        // Arrays.asList, not List.of: the third branch of this $cond is null -
+                        // an Event that has sold nothing has no currency to report - and
+                        // List.of rejects nulls with an NPE while the pipeline is being built.
                         .append("salesCurrency", new org.bson.Document("$max",
-                                new org.bson.Document("$cond", List.of(
+                                new org.bson.Document("$cond", java.util.Arrays.asList(
                                         new org.bson.Document("$eq", List.of("$status", "PAID")),
                                         "$currency", null))))),
                 context -> new org.bson.Document("$project", new org.bson.Document()

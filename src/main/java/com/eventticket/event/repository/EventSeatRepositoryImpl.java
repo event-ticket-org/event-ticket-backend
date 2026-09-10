@@ -61,8 +61,30 @@ public class EventSeatRepositoryImpl implements EventSeatQueries {
                 Aggregation.group("eventId")
                         .sum(ConditionalOperators.when(free).then(1).otherwise(0)).as("available")
                         .count().as("total"),
-                Aggregation.project("available", "total").and("_id").as("eventId"));
+                // A raw $project rather than the DSL's. `project(...).and("_id").as("eventId")`
+                // leaves _id in the output as well, and the result mapped with a null eventId -
+                // which is not an error, so SeatCounts.asMap keyed everything under null and
+                // every listing reported zero seats. Excluding _id explicitly is the fix, and
+                // the wider lesson is that a pipeline mistake surfaces as wrong data rather
+                // than as a failure.
+                context -> new org.bson.Document("$project", new org.bson.Document()
+                        .append("_id", 0)
+                        .append("eventId", "$_id")
+                        .append("available", 1)
+                        .append("total", 1)));
 
-        return mongo.aggregate(pipeline, EventSeat.class, SeatCounts.class).getMappedResults();
+        // Mapped by hand from Document rather than straight into the SeatCounts record.
+        // Spring Data will map an aggregation result into a record, but when a field does not
+        // line up it maps null and carries on - and a null eventId here is not an error, it is
+        // a map keyed under null and every listing quietly reporting zero seats. Reading the
+        // fields explicitly means a mistake is a ClassCastException at the boundary instead of
+        // a wrong number three layers away.
+        return mongo.aggregate(pipeline, EventSeat.class, org.bson.Document.class)
+                .getMappedResults().stream()
+                .map(d -> new SeatCounts(
+                        d.get("eventId", UUID.class),
+                        ((Number) d.getOrDefault("available", 0)).longValue(),
+                        ((Number) d.getOrDefault("total", 0)).longValue()))
+                .toList();
     }
 }
