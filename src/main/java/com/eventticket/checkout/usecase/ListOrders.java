@@ -4,7 +4,6 @@ import com.eventticket.checkout.domain.Order;
 import com.eventticket.checkout.domain.OrderDetail;
 import com.eventticket.checkout.domain.OrderSeat;
 import com.eventticket.checkout.repository.OrderRepository;
-import com.eventticket.checkout.repository.OrderSeatRepository;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.support.PageCursor;
@@ -30,12 +29,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class ListOrders {
 
     private final OrderRepository orders;
-    private final OrderSeatRepository orderSeats;
     private final EventRepository events;
 
-    public ListOrders(OrderRepository orders, OrderSeatRepository orderSeats, EventRepository events) {
+    public ListOrders(OrderRepository orders, EventRepository events) {
         this.orders = orders;
-        this.orderSeats = orderSeats;
         this.events = events;
     }
 
@@ -52,17 +49,17 @@ public class ListOrders {
             return Paged.lastPage(List.of());
         }
 
-        Map<UUID, List<OrderSeat>> seatsByOrder = orderSeats
-                .findByOrderIdIn(visible.stream().map(Order::id).toList())
-                .stream().collect(Collectors.groupingBy(OrderSeat::orderId));
-
+        // The seats-by-order map is gone. It existed to fetch a page's children in one query
+        // and group them in memory - the hand-written application-side join that keeps a
+        // listing from becoming N+1. Embedding removed the need for it rather than making it
+        // cheaper: the seats arrived inside the Orders. The titles below still need exactly
+        // that shape, because an Event is genuinely a separate document.
         Map<UUID, String> titles = events
                 .findAllById(visible.stream().map(Order::eventId).distinct().toList())
                 .stream().collect(Collectors.toMap(Event::id, Event::title));
 
         List<OrderDetail> items = visible.stream()
-                .map(order -> new OrderDetail(order, titles.get(order.eventId()),
-                        seatsByOrder.getOrDefault(order.id(), List.of())))
+                .map(order -> new OrderDetail(order, titles.get(order.eventId()), order.seats()))
                 .toList();
 
         Order last = visible.get(visible.size() - 1);

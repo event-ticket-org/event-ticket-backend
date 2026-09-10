@@ -6,6 +6,9 @@ import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.money.Money;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -54,6 +57,14 @@ public class Order {
 
     private Instant createdAt = Instant.now();
 
+    /**
+     * The seats, embedded (see {@link OrderSeat}). Kept sorted by label, which is what
+     * {@code findByOrderIdOrderByLabelAsc} used to ask the database for - eight seats is small
+     * enough that sorting once on write beats sorting on every read, and the database can no
+     * longer be asked to sort a nested array on the way out.
+     */
+    private List<OrderSeat> seats = new ArrayList<>();
+
     protected Order() {}
 
     public Order(UUID organizationId, UUID eventId, UUID buyerUserId, Money total, Instant holdExpiresAt) {
@@ -67,6 +78,22 @@ public class Order {
 
     public UUID id() {
         return id;
+    }
+
+    public List<OrderSeat> seats() {
+        return List.copyOf(seats);
+    }
+
+    /**
+     * Set once, when the Order is created and its seats have just been held.
+     *
+     * <p>Deliberately not {@code addSeat}. An Order's seats are decided in a single act at
+     * checkout and never afterwards, and a method that appended would invite a second write to
+     * a document whose whole justification for being one document is that it is written once.
+     */
+    public void holdSeats(List<OrderSeat> chosen) {
+        this.seats = new ArrayList<>(chosen);
+        this.seats.sort(Comparator.comparing(OrderSeat::label));
     }
 
     public UUID organizationId() {

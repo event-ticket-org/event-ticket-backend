@@ -4,7 +4,6 @@ import com.eventticket.checkout.domain.Order;
 import com.eventticket.checkout.domain.OrderDetail;
 import com.eventticket.checkout.domain.OrderSeat;
 import com.eventticket.checkout.repository.OrderRepository;
-import com.eventticket.checkout.repository.OrderSeatRepository;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventSeat;
 import com.eventticket.event.domain.PricingTier;
@@ -48,7 +47,6 @@ public class BeginCheckout {
     private static final Logger log = LoggerFactory.getLogger(BeginCheckout.class);
 
     private final OrderRepository orders;
-    private final OrderSeatRepository orderSeats;
     private final EventRepository events;
     private final EventSeatRepository seats;
     private final PricingTierRepository tiers;
@@ -56,12 +54,10 @@ public class BeginCheckout {
     private final UserDirectory users;
     private final Duration holdWindow;
 
-    public BeginCheckout(OrderRepository orders, OrderSeatRepository orderSeats,
-                  EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
+    public BeginCheckout(OrderRepository orders, EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
                   EventSeatAvailability availability, UserDirectory users,
                   @Value("${app.checkout.hold-window:PT10M}") Duration holdWindow) {
         this.orders = orders;
-        this.orderSeats = orderSeats;
         this.events = events;
         this.seats = seats;
         this.tiers = tiers;
@@ -102,15 +98,16 @@ public class BeginCheckout {
             refuseNaming(seatIds, held, chosen, eventId);
         }
 
-        orderSeats.saveAll(chosen.stream()
-                .map(seat -> new OrderSeat(event.organizationId(), userId, order.id(), seat.id(),
-                        seat.label(), seat.tierName(), prices.get(seat.tierName())))
+        order.holdSeats(chosen.stream()
+                .map(seat -> new OrderSeat(seat.id(), seat.label(), seat.tierName(),
+                        prices.get(seat.tierName())))
                 .toList());
+        orders.save(order);
 
         log.info("Began checkout orderId={} eventId={} seats={} total={}",
                 order.id(), eventId, held.size(), order.total().amount());
 
-        return new OrderDetail(order, event.title(), orderSeats.findByOrderIdOrderByLabelAsc(order.id()));
+        return new OrderDetail(order, event.title(), order.seats());
     }
 
     /**

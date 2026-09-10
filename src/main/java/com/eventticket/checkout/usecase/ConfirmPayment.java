@@ -2,7 +2,6 @@ package com.eventticket.checkout.usecase;
 
 import com.eventticket.checkout.domain.Order;
 import com.eventticket.checkout.repository.OrderRepository;
-import com.eventticket.checkout.repository.OrderSeatRepository;
 import com.eventticket.event.repository.EventSeatAvailability;
 import com.eventticket.payment.domain.PaymentEvent;
 import com.eventticket.payment.domain.PaymentProvider;
@@ -59,7 +58,6 @@ public class ConfirmPayment {
     private final PaymentSessionRepository sessions;
     private final PaymentEventRepository deliveries;
     private final OrderRepository orders;
-    private final OrderSeatRepository orderSeats;
     private final EventSeatAvailability availability;
     private final IssueTickets issueTickets;
     private final TenantPublisher tenant;
@@ -68,14 +66,12 @@ public class ConfirmPayment {
     private final Map<String, PaymentProvider> providers;
 
     public ConfirmPayment(PaymentSessionRepository sessions, PaymentEventRepository deliveries,
-                   OrderRepository orders, OrderSeatRepository orderSeats,
-                   EventSeatAvailability availability, IssueTickets issueTickets,
+                   OrderRepository orders, EventSeatAvailability availability, IssueTickets issueTickets,
                    TenantPublisher tenant, AuditTrail audit, ConfirmRefund confirmRefund,
                    List<PaymentProvider> providers) {
         this.sessions = sessions;
         this.deliveries = deliveries;
         this.orders = orders;
-        this.orderSeats = orderSeats;
         this.availability = availability;
         this.issueTickets = issueTickets;
         this.tenant = tenant;
@@ -151,7 +147,7 @@ public class ConfirmPayment {
         // Selling the seats *is* the check that the holds survived. Asking first and then
         // selling would be two statements with a race between them.
         List<UUID> sold = availability.sell(order.id());
-        long owed = orderSeats.countByOrderId(order.id());
+        long owed = order.seats().size();
 
         if (sold.size() != owed) {
             return keepNothing(session, order, sold.size(), owed);
@@ -163,7 +159,7 @@ public class ConfirmPayment {
         sessions.save(session);
         issueTickets.issue(new IssueTickets.Request(order.organizationId(), order.buyerUserId(),
                 order.id(), order.eventId(),
-                orderSeats.findByOrderIdOrderByLabelAsc(order.id()).stream()
+                order.seats().stream()
                         .map(seat -> new IssueTickets.Request.Seat(
                                 seat.eventSeatId(), seat.label(), seat.tierName()))
                         .toList()));

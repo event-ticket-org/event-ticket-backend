@@ -4,7 +4,6 @@ import com.eventticket.checkout.domain.Order;
 import com.eventticket.checkout.domain.OrderDetail;
 import com.eventticket.checkout.domain.OrderSeat;
 import com.eventticket.checkout.repository.OrderRepository;
-import com.eventticket.checkout.repository.OrderSeatRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.UserDirectory;
@@ -37,15 +36,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class ListEventOrders {
 
     private final OrderRepository orders;
-    private final OrderSeatRepository orderSeats;
     private final EventRepository events;
     private final Managers managers;
     private final UserDirectory users;
 
-    public ListEventOrders(OrderRepository orders, OrderSeatRepository orderSeats,
-                    EventRepository events, Managers managers, UserDirectory users) {
+    public ListEventOrders(OrderRepository orders, EventRepository events, Managers managers, UserDirectory users) {
         this.orders = orders;
-        this.orderSeats = orderSeats;
         this.events = events;
         this.managers = managers;
         this.users = users;
@@ -76,18 +72,15 @@ public class ListEventOrders {
             return Paged.lastPage(List.of());
         }
 
-        // Seats and addresses fetched once for the page. A refund list is read row by row by a
-        // person deciding something, so the shape that turns twenty rows into forty queries is
-        // the one to avoid before it exists.
-        List<UUID> orderIds = visible.stream().map(Order::id).toList();
-        Map<UUID, List<OrderSeat>> seatsByOrder = orderSeats.findByOrderIdIn(orderIds).stream()
-                .collect(Collectors.groupingBy(OrderSeat::orderId));
+        // Addresses fetched once for the page. The seats used to be fetched the same way and
+        // are not any more - they came with the Orders. What is left is the honest remainder:
+        // a buyer lives in another collection and always will, so this is where an
+        // application-side join is still the right answer rather than an avoidable one.
         Map<UUID, String> emails = users.emailsOf(
                 visible.stream().map(Order::buyerUserId).distinct().toList());
 
         List<OrderDetail> items = visible.stream()
-                .map(order -> new OrderDetail(order, event.title(),
-                        seatsByOrder.getOrDefault(order.id(), List.of()),
+                .map(order -> new OrderDetail(order, event.title(), order.seats(),
                         emails.get(order.buyerUserId())))
                 .toList();
 
