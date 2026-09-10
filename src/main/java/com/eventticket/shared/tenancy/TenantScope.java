@@ -19,11 +19,22 @@ import org.springframework.data.mongodb.core.query.Criteria;
  * returning another's orders, silently, with a 200.
  *
  * <p>That inversion is the single largest cost of this migration and it cannot be engineered
- * away. What it can be is <em>loud</em>: every tenant-scoped read composes one of the three
- * criteria below, and {@code TenantScopeTest} fails the build if a repository on a
- * tenant-scoped collection exposes a query that does not. Postgres made the mistake impossible.
- * The best available here is making it detectable before it ships, which is a weaker guarantee
- * honestly stated.
+ * away. What it can be is <em>loud</em>, and {@code TenantScopeTest} is what makes it so: every
+ * query on a collection that used to carry a policy must narrow by the tenant, be a lookup by
+ * key, or be listed with the reason it does not need to - and the build fails otherwise.
+ *
+ * <p><strong>Be accurate about what that buys.</strong> Most of this application's queries
+ * narrow by a <em>parent</em> - an event id, an order id - and are safe only because the caller
+ * loaded that parent and checked it first. Under Postgres they were safe regardless. So the
+ * BY_PARENT list in that test is not an exemption list, it is the risk register: the places
+ * where isolation is now a convention rather than a mechanism.
+ *
+ * <p>The criteria below are the vocabulary for the cases that <em>can</em> be narrowed directly,
+ * and for a stronger design than this one. The strongest available - a {@code MongoTemplate}
+ * subclass that injects the tenant into every query, including Spring Data's derived ones - is
+ * not built here, and that is a gap rather than a considered omission. Postgres made the mistake
+ * impossible; this makes it detectable before it ships, which is a weaker guarantee honestly
+ * stated.
  *
  * <h2>Three shapes, not one</h2>
  *
