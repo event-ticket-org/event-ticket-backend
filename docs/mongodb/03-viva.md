@@ -120,8 +120,11 @@ Be honest that it is a shorter list, and make the strongest point first:
 - **Embedding deleted a class of bug.** The money bug that needed a CTE cannot be *written* once
   the seats are inside the order, because there is no join to multiply.
 - **Embedding removed a tenancy field**, because an embedded document inherits its parent's scope.
-- **TTL indexes**, **partial unique indexes** (one-to-one port), and **`findOneAndUpdate`**
-  expressing the door better than SQL.
+- **TTL indexes** expire the token collections; Postgres needed a sweeper.
+- **`findOneAndUpdate`** expresses the door better than SQL does — the one place the migration
+  reads *better*.
+- **Plain unique indexes port exactly**, including the webhook idempotency key. (Partial ones do
+  not — see the traps below, and do not claim they do.)
 - An entire class of JPA bug — `@Modifying` flush/clear — leaves with JPA.
 
 ---
