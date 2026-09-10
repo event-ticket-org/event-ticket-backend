@@ -113,6 +113,75 @@ Lead with the sentence, then the list:
 
 ---
 
+## "Give me a concrete example of something that broke"
+
+Three, and they are better than the general answers because each one has a symptom, a cause and
+a fix that are all in different places. Tell them as stories.
+
+### The door started confirming a rival's ticket
+
+CLAUDE.md's rule: **tenant isolation outranks a helpful error message.** Another organization's
+ticket must come back `UNKNOWN_CODE`, never `WRONG_EVENT` — because `WRONG_EVENT` tells the staff
+holding the scanner that this code *is* a real ticket, sold by someone else.
+
+The `ticket_access` policy used to narrow that lookup. Without it, `findByCodeLookup` found the
+rival's ticket, the next line compared event ids, and the door answered `WRONG_EVENT`. **Nothing
+failed.** A test written months before the migration is the only reason it was caught.
+
+**The part worth telling:** `TenantScopeTest` had classified that lookup as *safe by key* — a
+ticket code is unguessable, so knowing it is the authorisation. That reasoning sounds right and
+is wrong. **A structural test can check that a query is narrowed; it cannot check that it is
+narrowed *enough*.** The behavioural test caught what the architecture test waved through, and
+you need both.
+
+### The door's transaction turned a resolvable race into a 500
+
+Under Postgres, `@Transactional` on the scan was free and correct: the conditional `UPDATE` took
+a row lock, three simultaneous losers blocked on it, and each woke to find a status that was no
+longer `VALID`. One winner, three civil refusals.
+
+The identical update inside a MongoDB transaction produces:
+
+```
+WriteConflict: Write conflict during plan execution
+errorLabels: ["TransientTransactionError"]
+```
+
+and the three losers get a 500. **MongoDB transactions are optimistic — a conflict aborts rather
+than queues**, and the driver expects the caller to retry the whole thing. At a gate with four
+scanners on one code, that is a retry storm in place of a queue.
+
+**The fix was not to retry.** It was that the door never needed a transaction: one conditional
+update to one document is atomic on its own, with no replica set and no lock hint. The annotation
+was carrying nothing and costing everything. What genuinely weakens: the scan row and the ticket
+update are no longer atomic together, so a process dying between them loses an audit row.
+
+### A null that was never written
+
+The last four failures, and the one to lead with if asked about *silent* bugs.
+
+```java
+{ $eq: ["$soldAt", null] }     // looks right. is not.
+```
+
+A seat that has never been sold has **no `soldAt` field at all** — Spring Data omits nulls when
+it writes — so this compared a *missing* field to null and did not do what it reads like. Every
+seat counted as unavailable, and the public listing told buyers **"0 of 6 left"** for an event
+with every seat free.
+
+Nothing threw. The `total` beside it was correct, which cost an hour: the aggregation
+demonstrably returned `total=6` under the right `eventId`, so the defect *looked* downstream, and
+it was one field to the left the whole time. `$not` is the reliable form — true for missing, null
+and false alike.
+
+**Why this is the shape that matters:** it was the third bug in this migration with the same
+signature. A SQL projection is checked when the application starts; `sum(case when s.sold_at is
+null ...)` either parses or it does not. A pipeline is assembled at runtime out of nested
+`Document`s, and a mistake does not throw — **it returns a plausible wrong number in a field
+somebody reads and believes.**
+
+---
+
 ## "What did you gain?"
 
 Be honest that it is a shorter list, and make the strongest point first:
