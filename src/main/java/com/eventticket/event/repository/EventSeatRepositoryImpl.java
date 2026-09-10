@@ -50,35 +50,38 @@ public class EventSeatRepositoryImpl implements EventSeatQueries {
      */
     @Override
     public List<SeatCounts> countSeats(List<UUID> eventIds, Instant now) {
-        Criteria free = new Criteria().andOperator(
-                Criteria.where("soldAt").is(null),
-                new Criteria().orOperator(
-                        Criteria.where("heldUntil").is(null),
-                        Criteria.where("heldUntil").lte(now)));
+        // Availability, written so that a missing field and an explicit null mean the same
+        // thing.
+        //
+        // The first version used Spring Data's ConditionalOperators with a Criteria, which
+        // produced { $eq: ["$soldAt", null] }. A seat that has never been sold has no soldAt
+        // field at all - Spring Data omits nulls when it writes - and that comparison did not
+        // do what it looks like it does: every seat counted as unavailable, the listing said
+        // "0 of 6 left", and nothing failed. The total beside it was right, which is what made
+        // it look like a mapping problem rather than a logic one.
+        //
+        // $not is the reliable form: it is true for missing, null and false alike, so it asks
+        // "is this seat unsold" without depending on whether the field was written.
+        org.bson.Document unsold = new org.bson.Document("$not", List.of("$soldAt"));
+        org.bson.Document unheld = new org.bson.Document("$or", List.of(
+                new org.bson.Document("$not", List.of("$heldUntil")),
+                new org.bson.Document("$lte", List.of("$heldUntil", now))));
 
         Aggregation pipeline = Aggregation.newAggregation(
                 Aggregation.match(Criteria.where("eventId").in(eventIds).and("forSale").is(true)),
-                Aggregation.group("eventId")
-                        .sum(ConditionalOperators.when(free).then(1).otherwise(0)).as("available")
-                        .count().as("total"),
-                // A raw $project rather than the DSL's. `project(...).and("_id").as("eventId")`
-                // leaves _id in the output as well, and the result mapped with a null eventId -
-                // which is not an error, so SeatCounts.asMap keyed everything under null and
-                // every listing reported zero seats. Excluding _id explicitly is the fix, and
-                // the wider lesson is that a pipeline mistake surfaces as wrong data rather
-                // than as a failure.
+                context -> new org.bson.Document("$group", new org.bson.Document()
+                        .append("_id", "$eventId")
+                        .append("available", new org.bson.Document("$sum",
+                                new org.bson.Document("$cond", List.of(
+                                        new org.bson.Document("$and", List.of(unsold, unheld)),
+                                        1, 0))))
+                        .append("total", new org.bson.Document("$sum", 1))),
                 context -> new org.bson.Document("$project", new org.bson.Document()
                         .append("_id", 0)
                         .append("eventId", "$_id")
                         .append("available", 1)
                         .append("total", 1)));
 
-        // Mapped by hand from Document rather than straight into the SeatCounts record.
-        // Spring Data will map an aggregation result into a record, but when a field does not
-        // line up it maps null and carries on - and a null eventId here is not an error, it is
-        // a map keyed under null and every listing quietly reporting zero seats. Reading the
-        // fields explicitly means a mistake is a ClassCastException at the boundary instead of
-        // a wrong number three layers away.
         return mongo.aggregate(pipeline, EventSeat.class, org.bson.Document.class)
                 .getMappedResults().stream()
                 .map(d -> new SeatCounts(

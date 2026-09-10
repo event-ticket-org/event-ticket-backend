@@ -168,16 +168,22 @@ Two honest answers:
 
 ## The state of the work, stated accurately
 
-**181 of 191 tests pass** (6 written for this migration). The 10 failures:
+**192 of 192 tests pass**, seven of them written for this migration. The API is unchanged, the
+contract is byte-identical, and the suite is green.
 
-- **4** — seat counts. The aggregation demonstrably returns the right values under the right id;
-  something between it and the DTO drops them. Not diagnosed. Do not claim it is.
-- **2** — `RedemptionConcurrencyTest`. No row locks. Expected, and the point.
-- **2** — the rewritten tenancy tests, whose new expectations are still guessed rather than
-  measured.
-- **1** — `DeploymentConfigurationTest`, which reads `application.yml` for a datasource that no
-  longer exists.
-- **1** — `AdmissionTest`.
+Be precise about what that does *not* mean:
 
-If asked whether the migration is finished: **no.** It runs, the hard problems are solved and
-measured, and ten tests are outstanding — four of them a real defect that is not yet understood.
+- **Four of those green tests assert a loss.** `PublishedSeatMapIsFrozenTest` now proves a
+  published event's seats *can* be relabelled and its `publishedAt` nulled. `EventTenancyTest`
+  and `OrderTenancyTest` count a collection with no filter and assert they see **every**
+  tenant's rows. They pass, and they are failures - receipts for guarantees that were traded
+  away.
+- **Tenant isolation is a convention backed by a build-time test**, not a mechanism. Twenty of
+  twenty-eight queries are safe only because a caller checked a parent first.
+- **The stronger design was not built.** A `MongoTemplate` subclass injecting the tenant into
+  every query, including Spring Data's derived ones, is the answer that would make forgetting
+  impossible again. It is a gap, not a considered omission.
+
+If asked whether the migration is finished: **the port is; the system is not equivalent.** It
+does the same things and it defends itself less well, and the tests that pass are the evidence
+for both halves of that sentence.

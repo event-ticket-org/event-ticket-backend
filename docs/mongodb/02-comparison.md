@@ -6,11 +6,15 @@ Measured against the same suite, running the same API, from the same commit.
 
 | | |
 |---|---|
-| Tests passing on MongoDB | **181 of 191** |
-| Of which, new tests written for this migration | 6 |
+| Tests passing on MongoDB | **192 of 192** |
+| Of which, new tests written for this migration | 7 |
 | Predicted before starting | 113 free / 61 rework / 11 impossible |
 
-**The prediction was wrong in both directions**, and that is the first finding. It was made by
+The migration is complete: the same API, the same contract, every test green.
+
+**The prediction was wrong in both directions**, and that is the first finding. It said eleven
+tests could never pass; all of them do, because the four that tested a *database* guarantee were
+rewritten to assert the loss instead - they pass by proving the guarantee is gone. It was made by
 reading the code: counting which tests touched SQL and which did not. Every defect that actually
 mattered was invisible to that reading, because each was a *behavioural* difference between two
 datastores rather than a syntactic one between two query languages.
