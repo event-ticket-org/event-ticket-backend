@@ -9,6 +9,7 @@ Measured against the same suite, running the same API, from the same commit.
 | Tests passing on MongoDB | **192 of 192** |
 | Of which, new tests written for this migration | 7 |
 | Predicted before starting | 113 free / 61 rework / 11 impossible |
+| Defects found *after* the suite was green, by running the system | **2** |
 
 The migration is complete: the same API, the same contract, every test green.
 
@@ -22,6 +23,11 @@ datastores rather than a syntactic one between two query languages.
 ## The three that stopped everything
 
 Each was found by running the system, none by reading it.
+
+Two more were found **after** the suite was green, by starting the application by hand — the
+wrong database and the losers' 500. They are at the bottom of this page under
+[what a green suite does not prove](#what-a-green-suite-does-not-prove), and they are the two
+most worth understanding, because nothing in the test run was capable of reporting either.
 
 ### 1. There is no dirty checking
 
@@ -101,14 +107,31 @@ honest about the package graph, dishonest about the truth.
 
 ### `SELECT … FOR UPDATE`
 
-There is no pessimistic lock. Putting the condition in the filter is *exactly* as correct per
-document — no read-then-write gap, so no check-then-act. The loss is across documents:
-`updateMulti` is atomic per document, so an order for three seats can win two and must release
-them.
+There is no pessimistic lock, and this cost more than anything else on this list.
 
-**Where Postgres produced one winner and one loser, MongoDB can produce two losers.** Nothing is
-double-sold — the invariant holds — but throughput under contention is strictly worse, and it
-degrades exactly when the system is busiest.
+Putting the condition in the filter is *exactly* as correct per document — no read-then-write
+gap, so no check-then-act. The loss is across documents: `updateMulti` is atomic per document,
+so an order for three seats can win two and must release them. Nothing is double-sold; the
+invariant holds.
+
+**The part that reading the code did not predict** is what happens to the losers. Postgres
+*queued* them: `SELECT … FOR UPDATE` made the second buyer block, wake when the winner
+committed, re-evaluate, and receive a 409 naming the seats that had gone. A MongoDB transaction
+is optimistic, so there is nothing to wait on — the loser's transaction is **aborted**:
+
+```
+WriteConflict (112)   errorLabels: ["TransientTransactionError"]
+```
+
+The driver's contract is that the caller retries the whole transaction. Nothing did, so eleven
+of twelve racing buyers received `500 "The request could not be completed."` where Postgres had
+given eleven civil 409s. `TransientRetry` now restores the 409 by re-running the transaction.
+
+**Behaviour matches again. The cost profile does not.** Postgres queued each loser once;
+retrying makes them redo the entire unit of work — the Event, the seats, the pricing tiers —
+and a retry storm is the worst possible load to add at an on-sale spike, which is the one
+moment this is guaranteed to happen. That is the trade in its honest form: **identical API,
+strictly worse behaviour under pressure.**
 
 ### Smaller, real
 
@@ -199,3 +222,41 @@ The interesting conclusion is not "MongoDB is worse". It is that **the document/
 should follow the shape of the invariants, not the shape of the reads.** A system whose rules are
 mostly single-aggregate would come out the other way, and the parts of this system that *are*
 single-aggregate ported cleanly and in some cases improved.
+
+## What a green suite does not prove
+
+Both of these were found after "192 of 192" was written down, by starting the application and
+looking at what it actually did. Neither could have failed a test.
+
+### The application was using the wrong database entirely
+
+Spring Boot 4 moved the MongoDB connection properties out of Spring Data into their own module
+and renamed the prefix: `spring.data.mongodb.uri` and `spring.data.mongodb.database` are
+deprecated at **level `error`**, which means removed. An unknown property is ignored in
+silence, so the whole block was inert, the driver used its defaults, and every collection and
+every document lived in MongoDB's default database, `test`.
+
+The suite cannot see this. Testcontainers' service connection hands Boot a client built from
+the container, so **no test reads those properties at all**. It also hid a second bug behind
+the same cause: `MongoUuidConfig` existed to set the UUID representation on the client builder,
+and its javadoc blamed Testcontainers for the property "not reaching" the client. The name
+`spring.data.mongodb.uuid-representation` was simply dead too. Using
+`spring.mongodb.representation.uuid` deleted the entire class with no behaviour change.
+
+### Eleven of twelve buyers were told the server had broken
+
+Covered under `SELECT … FOR UPDATE` above. The point *here* is why the suite reported success:
+
+```java
+(response.getStatusCode() == HttpStatus.CREATED ? created : refused).incrementAndGet();
+```
+
+**Anything that was not a 201 counted as a civil refusal.** One winner and eleven losers is what
+the test asserted, and one winner and eleven losers is exactly what it got — with the eleven
+receiving a 500. The A/B table comparing the two builds had the identical flaw: it counted
+winners, both stacks said "1 of 6", and it printed `same`.
+
+The lesson generalises past MongoDB. **A test that counts outcomes cannot see a change in what
+an outcome *is*.** Assert the refusal a caller receives, not the absence of success — and when
+two systems are being compared, compare the losing path, because that is where a datastore's
+concurrency model actually shows.

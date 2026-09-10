@@ -1,33 +1,34 @@
 services:
-  postgres:
-    image: postgres:18
-    environment:
-      POSTGRES_DB: eventticket
-      POSTGRES_USER: eventticket
-      POSTGRES_PASSWORD: eventticket
-      # Pinned, not left to the image.
-      #
-      # Postgres 18 moved the default data directory from /var/lib/postgresql/data to
-      # /var/lib/postgresql/18/docker, and the image declares VOLUME /var/lib/postgresql.
-      # A compose file written for 17 therefore keeps working and quietly stops persisting:
-      # the named volume below is mounted somewhere the server never writes, the real
-      # cluster lands in an anonymous volume, and `docker compose down` throws it away.
-      #
-      # Worse, that anonymous volume is re-attached on every recreate, so a cluster
-      # initialised once without these credentials keeps coming back and authentication
-      # fails with no clue as to why.
-      PGDATA: /var/lib/postgresql/data
+  mongo:
+    image: mongo:8.0
+    # --replSet is not optional, and the failure it prevents is quiet.
+    #
+    # MongoDB implements transactions on the oplog, and a standalone mongod has none - it does
+    # not run them slowly, it refuses them outright with "Transaction numbers are only allowed
+    # on a replica set member". ConfirmPayment needs one, so without this the application
+    # starts cleanly, serves most of the API, and fails only when somebody pays.
+    #
+    # A replica set of one is still a replica set. This is the smallest configuration that can
+    # begin a transaction at all, which is a deployment constraint Postgres never had: a single
+    # Postgres has been able to BEGIN since before replication existed.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mongodata:/data/db
     healthcheck:
-      # -d as well as -U: pg_isready answers "accepting connections" for a server that has
-      # no such role and no such database, which makes a green healthcheck mean very little.
-      test: ["CMD-SHELL", "pg_isready -U eventticket -d eventticket"]
+      # Initiates the set on the first run and is a no-op afterwards, so the healthcheck is
+      # also the bootstrap. `hello().isWritablePrimary` rather than a ping: a member that has
+      # been initiated but has not yet elected itself answers a ping perfectly well and cannot
+      # take a write, which is the same shape of hollow green light that `pg_isready -U` was.
+      test: >
+        mongosh --quiet --eval "
+          try { rs.status().ok } catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}) };
+          quit(db.hello().isWritablePrimary ? 0 : 1)"
       interval: 5s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 20
+      start_period: 10s
 
   # Object storage for Event cover images (ADR-0006). A container beside the database rather
   # than an AWS account, so that "clone it and run it" stays true - which is worth more than
@@ -78,5 +79,5 @@ services:
         mc ilm rule add --expire-days 1 --prefix pending/ local/event-ticket-covers || true
 
 volumes:
-  pgdata:
+  mongodata:
   miniodata:

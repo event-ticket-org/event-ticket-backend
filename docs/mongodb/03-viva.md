@@ -115,8 +115,9 @@ Lead with the sentence, then the list:
 
 ## "Give me a concrete example of something that broke"
 
-Three, and they are better than the general answers because each one has a symptom, a cause and
-a fix that are all in different places. Tell them as stories.
+Five, and they are better than the general answers because each one has a symptom, a cause and
+a fix that are all in different places. Tell them as stories. The last two were found **after**
+the suite was green, which is the point of telling them.
 
 ### The door started confirming a rival's ticket
 
@@ -180,6 +181,88 @@ null ...)` either parses or it does not. A pipeline is assembled at runtime out 
 `Document`s, and a mistake does not throw — **it returns a plausible wrong number in a field
 somebody reads and believes.**
 
+### Eleven of twelve buyers were told the server had broken
+
+The one to lead with if asked about **concurrency**, because it is the whole Postgres/MongoDB
+difference reduced to one HTTP status code.
+
+Twelve buyers press "buy" on the same seat at the same instant.
+
+| | Postgres | MongoDB |
+|---|---|---|
+| Winner | 1 | 1 |
+| Losers get | `409 SEATS_UNAVAILABLE`, naming the seats | `500 "The request could not be completed."` |
+
+**Postgres locks pessimistically.** `SELECT … FOR UPDATE` made the eleven losers *block*. They
+waited, woke when the winner committed, re-evaluated, and were refused with a status about
+seats. The database queued the contention.
+
+**MongoDB transactions are optimistic.** There is nothing to wait on, so the loser's
+transaction is aborted: `WriteConflict (112)`, labelled `TransientTransactionError`. The
+driver's contract is that the caller retries the whole transaction. Nothing retried, so the
+abort surfaced as a `DataIntegrityViolationException` and reached a buyer as a 500.
+
+The fix is `TransientRetry`: run the transaction again, up to five times, with jittered
+backoff — jittered because twelve buyers aborted by one winner would otherwise all retry in the
+same millisecond and race each other. **The 409 is back. The cost is not the same.** Postgres
+queued each loser exactly once; retrying makes them redo the whole unit of work, and a retry
+storm arrives precisely at an on-sale spike.
+
+**And be ready for "why didn't a test catch it", because that is the real question.**
+`SeatHoldConcurrencyTest` said:
+
+```java
+(response.getStatusCode() == HttpStatus.CREATED ? created : refused).incrementAndGet();
+```
+
+Anything that was not a 201 counted as a refusal. It asserted one winner and eleven losers and
+got exactly that — with the eleven holding a 500. **A test that counts outcomes cannot see a
+change in what an outcome is.**
+
+The A/B table built to compare the two running stacks had the *same* flaw and printed `same`,
+because it counted winners too. The difference was only ever visible in the losers' response
+bodies. **When comparing two datastores, compare the losing path** — the winner's path is where
+they agree, and the concurrency model only shows itself in what happens to whoever lost.
+
+### The application ran perfectly against the wrong database
+
+The best of the four, because it survived a **green suite** and a working API at the same time.
+
+After every test passed, the application was started by hand for the first time and driven
+through the whole journey - register, publish, buy, scan. All of it worked. Then a check of
+what the server actually held:
+
+```
+> db.adminCommand('listDatabases')
+admin  config  local  test
+```
+
+There is no `eventticket` database. Sixteen collections, every document, in MongoDB's default
+database `test`, because **Spring Boot 4 moved the MongoDB properties out of Spring Data into
+their own module and renamed the prefix**: `spring.data.mongodb.uri` and
+`spring.data.mongodb.database` are deprecated at level `error`, which means removed. An unknown
+property is not an error - it is ignored in silence - so the whole block was inert, the driver
+fell back to its defaults, and `localhost:27017` with no database named is `test`.
+
+Two things make it worth telling:
+
+- **No test could have caught it.** Testcontainers' service connection hands Boot a client
+  built from the container, so the suite never reads those properties at all. 192 green tests
+  say nothing whatsoever about how this application connects to a database in a deployment.
+- **It hid a second bug behind the same cause.** `MongoUuidConfig` existed to set the UUID
+  representation on the client builder, and its javadoc blamed Testcontainers for the property
+  "not reaching" the client. Testcontainers had nothing to do with it: the name
+  `spring.data.mongodb.uuid-representation` was equally dead. Once
+  `spring.mongodb.representation.uuid` was used instead, the entire class deleted with no
+  behaviour change. **A wrong explanation that produces a working workaround is expensive** -
+  it stops the search.
+
+**The general point, and the one to make out loud:** the migration's other three defects were
+differences between two datastores. This one was not - it was a configuration key nobody typed
+wrong, that simply no longer meant anything. The suite passing is evidence that the code is
+right. It is not evidence that the system is *configured*, and the only thing that produces
+that evidence is starting it and looking at what it touched.
+
 ---
 
 ## "What did you gain?"
@@ -207,6 +290,11 @@ not disappear. Every rule Postgres enforced is now code that must be right every
 for the title search** — `$regex` ignores collation entirely, so it needs a denormalized folded
 field. A wash on speed, a loss on complexity.
 
+**"The tests pass, so the migration works."** They prove the code is right and say nothing
+about the configuration: the whole application ran against MongoDB's default database
+`test` with 192 tests green, because Testcontainers supplies the connection and no test
+ever reads the connection properties.
+
 **"You just swap the repository layer."** 96 compile errors, then three behavioural defects that
 compiled perfectly and were invisible to the compiler.
 
@@ -225,9 +313,16 @@ indexes a **missing field as null**, where Postgres treats NULLs as distinct: po
 
 Two honest answers:
 
-1. **Run it sooner.** The prediction made by reading code (113 free / 61 rework / 11 impossible)
-   was wrong in both directions. Every defect that mattered was behavioural, and no amount of
-   reading would have found the missing `save()` calls.
+1. **Run it sooner** — and this is the strongest lesson in the exercise, because the evidence
+   kept arriving after each point where the work looked finished. The prediction made by reading
+   code (113 free / 61 rework / 11 impossible) was wrong in both directions. Then the suite went
+   green, and starting the application by hand immediately found that it had been using the
+   wrong database the whole time. Then the journeys matched on all 40 steps, and running a
+   *race* found eleven of twelve buyers holding a 500.
+
+   Each stage was a real check and each one was passed. **Every stage also missed something only
+   the next stage could see**, and they get progressively harder to fake: reading, then testing,
+   then running, then running under contention.
 2. **Intercept at `MongoTemplate`, not at the repository.** Tenant filtering is enforced by
    convention plus a build-time test. The stronger design subclasses `MongoTemplate` so every
    query — including Spring Data's derived ones — passes through one choke point. It was not built
@@ -239,6 +334,11 @@ Two honest answers:
 
 **192 of 192 tests pass**, seven of them written for this migration. The API is unchanged, the
 contract is byte-identical, and the suite is green.
+
+Both builds were then started side by side — PostgreSQL on 8081, MongoDB on 8090 — and driven
+through the same journey by hand: register, verify, publish, price, buy, pay, issue tickets,
+scan at the door, refund. **40 API steps, every one identical**, plus three concurrency races
+with matching outcomes down to the losers' status codes.
 
 Be precise about what that does *not* mean:
 
@@ -252,6 +352,10 @@ Be precise about what that does *not* mean:
 - **The stronger design was not built.** A `MongoTemplate` subclass injecting the tenant into
   every query, including Spring Data's derived ones, is the answer that would make forgetting
   impossible again. It is a gap, not a considered omission.
+- **Retrying restores the behaviour and not the cost.** `TransientRetry` gives the losing buyer
+  their 409 back by re-running the whole transaction. PostgreSQL queued each loser once; this
+  makes them redo the work, and it does so at an on-sale spike, which is the only time it
+  happens. The API is identical; the load profile is worse.
 
 If asked whether the migration is finished: **the port is; the system is not equivalent.** It
 does the same things and it defends itself less well, and the tests that pass are the evidence

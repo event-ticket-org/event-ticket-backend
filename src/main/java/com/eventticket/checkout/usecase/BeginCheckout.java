@@ -15,6 +15,7 @@ import com.eventticket.shared.UserDirectory;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.money.Money;
+import com.eventticket.shared.mongo.TransientRetry;
 import com.eventticket.shared.tenancy.TenantContext;
 import java.time.Duration;
 import java.time.Instant;
@@ -27,7 +28,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * requirements/004. Selection is free and optimistic; this is where the commitment and the
@@ -40,6 +42,19 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>A refusal names the seats (criterion 6) so the client can keep the rest of the
  * selection. Failing with "some seats are gone" would make a buyer start over for one row.
+ *
+ * <h2>The transaction is a template and not an annotation, and that is the migration talking</h2>
+ *
+ * <p>Under Postgres this was {@code @Transactional} and nothing more, because the database
+ * queued contention: the losers blocked on a row lock and woke up to a 409. A MongoDB
+ * transaction aborts instead of waiting, so the same race handed eleven of twelve buyers a 500.
+ *
+ * <p>The retry has to sit <em>outside</em> the transaction, and an annotation cannot be
+ * arranged that way from inside one class - a self-call does not pass through the proxy. So the
+ * transaction becomes an explicit {@link TransactionTemplate}, wrapped by
+ * {@link TransientRetry}, which reads in the order it actually happens: retry the transaction,
+ * do not retransact the retry. {@code CancelEvent} already uses a template for its own reasons,
+ * so this is not a new idiom in this codebase.
  */
 @Component
 public class BeginCheckout {
@@ -53,10 +68,13 @@ public class BeginCheckout {
     private final EventSeatAvailability availability;
     private final UserDirectory users;
     private final Duration holdWindow;
+    private final TransientRetry retry;
+    private final TransactionTemplate transactions;
 
     public BeginCheckout(OrderRepository orders, EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
                   EventSeatAvailability availability, UserDirectory users,
-                  @Value("${app.checkout.hold-window:PT10M}") Duration holdWindow) {
+                  @Value("${app.checkout.hold-window:PT10M}") Duration holdWindow,
+                  TransientRetry retry, PlatformTransactionManager transactionManager) {
         this.orders = orders;
         this.events = events;
         this.seats = seats;
@@ -64,10 +82,20 @@ public class BeginCheckout {
         this.availability = availability;
         this.users = users;
         this.holdWindow = holdWindow;
+        this.retry = retry;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * The transaction, and a second go at it if MongoDB aborted the first for contention rather
+     * than for a reason. Every retry starts from scratch on purpose: the abort rolled the Order
+     * back too, so re-reading is not waste, it is the only way to see who actually won.
+     */
     public OrderDetail begin(UUID eventId, List<UUID> seatIds) {
+        return retry.execute(() -> transactions.execute(status -> attempt(eventId, seatIds)));
+    }
+
+    private OrderDetail attempt(UUID eventId, List<UUID> seatIds) {
         UUID userId = TenantContext.requireUserId();
         requireVerifiedEmail(userId);
 
