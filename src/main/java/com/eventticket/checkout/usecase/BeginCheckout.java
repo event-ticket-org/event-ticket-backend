@@ -87,10 +87,16 @@ public class BeginCheckout {
         // is no half-made order to clean up later.
         //
         // saveAndFlush, not save. The hold is taken by a SQL function through JdbcTemplate,
-        // which shares the transaction but not the persistence context, so an INSERT that JPA
-        // is still holding back is a row the database cannot see - and the hold's foreign key
-        // to it fails.
-        Order order = orders.saveAndFlush(new Order(event.organizationId(), eventId, userId,
+        // `saveAndFlush` here, because `hold_seats` was raw SQL sharing the transaction but
+        // not the persistence context: an INSERT JPA was still holding back was a row the
+        // database could not see, and the hold's foreign key to it failed.
+        //
+        // Both halves of that are gone. There is no persistence context to hold anything back,
+        // so a save is a write; and there is no foreign key from a seat to an order, so nothing
+        // would have checked. A save is enough - and note the second reason is not a
+        // simplification: the constraint that made the ordering matter simply is not enforced
+        // any more.
+        Order order = orders.save(new Order(event.organizationId(), eventId, userId,
                 totalOf(chosen, prices), expiresAt));
 
         List<UUID> held = availability.hold(eventId, seatIds, order.id(), expiresAt);

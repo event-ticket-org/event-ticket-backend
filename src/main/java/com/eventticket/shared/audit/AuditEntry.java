@@ -41,7 +41,7 @@ public class AuditEntry {
         this.subject = subject;
     }
 
-    public Long id() {
+    public UUID id() {
         return id;
     }
 

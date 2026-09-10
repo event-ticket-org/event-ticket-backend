@@ -4,6 +4,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
+import com.eventticket.shared.mongo.TextFolding;
 import com.eventticket.venue.domain.MapElement;
 import java.time.Instant;
 import java.util.Map;
@@ -34,6 +35,17 @@ public class Event {
     private UUID venueId;
 
     private String title;
+
+    /**
+     * {@link #title} folded for searching, because {@code $regex} ignores collation and a
+     * public title search is a substring match (see {@link TextFolding}).
+     *
+     * <p>Denormalized, and therefore only as correct as the write paths that maintain it -
+     * which is why it is set in exactly the two places {@code title} is set, and why neither
+     * takes a title without going through here. Postgres needed no such field: it folded in
+     * the predicate.
+     */
+    private String titleFolded;
 
     private String description;
 
@@ -94,6 +106,7 @@ public class Event {
         this.organizationId = organizationId;
         this.venueId = venueId;
         this.title = title;
+        this.titleFolded = TextFolding.fold(title);
         this.description = description;
         this.startsAt = startsAt;
         this.doorsOpenAt = doorsOpenAt;
@@ -223,6 +236,7 @@ public class Event {
     public void describeAs(String title, String description) {
         requireStillEditable();
         this.title = title;
+        this.titleFolded = TextFolding.fold(title);
         this.description = description;
     }
 

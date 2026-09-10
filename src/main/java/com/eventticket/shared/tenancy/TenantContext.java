@@ -6,8 +6,12 @@ import com.eventticket.shared.error.ErrorCodes;
 
 /**
  * The tenant and user for the current request, established by {@code JwtTenantFilter} from
- * the access token's claims and read by {@link TenantAwareTransactionManager} when a
- * transaction begins.
+ * the access token's claims and read by {@link TenantScope} when each query is built.
+ *
+ * <p>Under Postgres this was read once per transaction and pushed into the database session,
+ * which then applied it to everything. It is now read once per query, by whichever criteria
+ * the collection's old policy corresponded to - the same value, consulted far more often, and
+ * by code that has to remember to ask.
  *
  * <p>Never populated from a URL path or a request parameter. The active Organization is a
  * token claim precisely so that passing someone else's identifier cannot change it
@@ -60,13 +64,4 @@ public final class TenantContext {
         return id;
     }
 
-    public static String userIdAsSetting() {
-        UUID id = userId();
-        return id == null ? "" : id.toString();
-    }
-
-    public static String organizationIdAsSetting() {
-        UUID id = organizationId();
-        return id == null ? "" : id.toString();
-    }
 }

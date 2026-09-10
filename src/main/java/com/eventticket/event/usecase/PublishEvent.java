@@ -95,12 +95,16 @@ public class PublishEvent {
         // Event, and inside this transaction it can already see an update that has been
         // flushed - so the seats go in while the Event is still a Draft, and only then does
         // it become published.
+        // The explicit flush is gone with the persistence context. So is the reason it was
+        // needed: `event_seat_frozen` refused an insert once the Event was published and could
+        // see this transaction's own flushed update, so the seats had to go in while the Event
+        // was still a Draft. Nothing refuses either order now, which makes the sequencing below
+        // a convention rather than a rule the database will hold us to.
         seats.saveAll(map.seats().stream().map(seat -> asEventSeat(organizationId, eventId, seat)).toList());
-        seats.flush();
 
         event.freezeSeatMapElements(map.elements());
         event.publish(Instant.now());
-        events.saveAndFlush(event);
+        events.save(event);
 
         audit.record(organizationId, AuditTrail.EVENT_PUBLISHED, event.title());
         log.info("Published event eventId={} seats={} tiers={}",
