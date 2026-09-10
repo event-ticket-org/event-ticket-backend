@@ -29,7 +29,7 @@ class DeploymentConfigurationTest {
 
     /** The environment variables that carry a credential, and must therefore have no default. */
     private static final List<String> CREDENTIALS = List.of(
-            "DATABASE_PASSWORD", "JWT_SECRET", "STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY",
+            "JWT_SECRET", "STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY",
             "TICKET_CODE_KEY", "FAKE_PAYMENT_SECRET");
 
     private static final Path APPLICATION_YML = Path.of("src/main/resources/application.yml");
@@ -88,5 +88,37 @@ class DeploymentConfigurationTest {
     void mailHealthIsDisabled() throws IOException {
         assertThat(Files.readString(APPLICATION_YML))
                 .containsPattern("health:\\s*\\n\\s*mail:[\\s\\S]*?enabled:\\s*false");
+    }
+
+    /**
+     * {@code DATABASE_PASSWORD} left this list with Postgres, and the rule it belonged to does
+     * not port cleanly - which is worth a test of its own rather than a silent deletion.
+     *
+     * <p>Postgres took its password as a separate property, so "no credential has a default" was
+     * exact: {@code password: ${DATABASE_PASSWORD}} with no fallback, and an unconfigured
+     * deployment refused to boot. MongoDB folds the credential into the connection string, and
+     * that string also carries the host and the database name - so it needs a default to be
+     * usable on a laptop, and a default URI is a default that quietly means "no authentication".
+     *
+     * <p>So the rule weakens from "cannot start unconfigured" to "cannot start unconfigured with
+     * a credential nobody chose". That is genuinely less than Postgres gave, and this asserts the
+     * part that survives: the default may exist, and it may not contain credentials. A URI of the
+     * form {@code mongodb://user:pass@host} in this file would be a published password.
+     */
+    @Test
+    @DisplayName("the MongoDB URI has a default, and that default carries no credentials")
+    void theConnectionStringDefaultIsUnauthenticated() throws IOException {
+        String configuration = Files.readString(APPLICATION_YML);
+
+        Matcher uri = Pattern.compile("\\$\\{MONGODB_URI(:[^}]*)?}").matcher(configuration);
+        assertThat(uri.find()).as("application.yml reads MONGODB_URI").isTrue();
+
+        String fallback = uri.group(1);
+        assertThat(fallback)
+                .as("the URI needs a default so a clone runs with no setup")
+                .isNotNull();
+        assertThat(fallback)
+                .as("a default connection string containing '@' is a published credential")
+                .doesNotContain("@");
     }
 }

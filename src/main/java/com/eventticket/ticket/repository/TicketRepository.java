@@ -50,7 +50,22 @@ public interface TicketRepository extends MongoRepository<Ticket, UUID> {
     /** requirements/008 criterion 6: cancelling voids every Ticket, not only the paid ones. */
     public List<Ticket> findByEventId(UUID eventId);
 
-    public Optional<Ticket> findByCodeLookup(String codeLookup);
+    /**
+     * The door's lookup, narrowed to the Organization doing the scanning.
+     *
+     * <p><strong>The organizationId is not redundant and its absence was a disclosure.</strong>
+     * Under Postgres the {@code ticket_access} policy applied the tenant to this read, so a code
+     * sold by another Organization simply was not found and the door answered
+     * {@code UNKNOWN_CODE}. That is deliberate: CLAUDE.md's rule is that tenant isolation
+     * outranks a helpful error message, because {@code WRONG_EVENT} tells the staff holding the
+     * scanner that this code is a real ticket somebody else sold.
+     *
+     * <p>Without the policy the lookup found the other Organization's Ticket, the next line
+     * compared event ids, and the door started answering {@code WRONG_EVENT} - confirming to one
+     * organizer that a code belongs to a rival. Nothing failed; a test that had been asserting
+     * this since before the migration is the only reason it was noticed.
+     */
+    public Optional<Ticket> findByCodeLookupAndOrganizationId(String codeLookup, UUID organizationId);
 
     public long countByOrderId(UUID orderId);
 

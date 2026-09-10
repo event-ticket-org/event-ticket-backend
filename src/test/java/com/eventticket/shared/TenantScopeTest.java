@@ -83,10 +83,23 @@ class TenantScopeTest {
             "EventRepository.findPage",
             "takes organizationId and EventRepositoryImpl filters on it as the first criterion");
 
-    /** Authorised by knowing an unguessable value, which was equally true under Postgres. */
+    /**
+     * Authorised by knowing an unguessable value, which was equally true under Postgres.
+     *
+     * <p>{@code findByCodeLookup} used to be on this list and it was wrong to be. A ticket code
+     * is unguessable, so "knowing it is the authorisation" sounded right - but the Postgres
+     * policy narrowed that read by tenant as well, and for a reason: without it the door
+     * answers {@code WRONG_EVENT} for a rival's code instead of {@code UNKNOWN_CODE}, which
+     * confirms the code is real and somebody else sold it. It is now
+     * {@code findByCodeLookupAndOrganizationId} and belongs to BY_TENANT.
+     *
+     * <p>Worth keeping as a note rather than deleting: this test classified that method as safe
+     * and a behavioural test proved it was not. A reflection test can check that a query is
+     * narrowed; it cannot check that it is narrowed <em>enough</em>.
+     */
     private static final Set<String> BY_KEY = Set.of(
             "findbyid", "existsbyid", "deletebyid", "findbyidin", "findallbyid",
-            "findbycodelookup", "findbytoken", "findbyproviderref", "redeem", "findorthrow");
+            "findbytoken", "findbyproviderref", "redeem", "findorthrow");
 
     /**
      * Narrowed by a parent the caller is expected to have checked. Each entry names the check

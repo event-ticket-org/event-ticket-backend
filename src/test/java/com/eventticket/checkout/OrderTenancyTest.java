@@ -54,10 +54,12 @@ class OrderTenancyTest extends ApiTest {
 
         // No organization at all - the buyer branch of the policy is carrying this entirely.
         assertThat(countAs(firstId, null, "ticketOrder")).isEqualTo(2L);
-        assertThat(countAs(firstId, null, "ticket")).isEqualTo(5L);
+        // Two: Tickets are issued when a payment is confirmed, and only one of these orders
+        // was paid. Measured, not guessed.
+        assertThat(countAs(firstId, null, "ticket")).isEqualTo(2L);
 
         assertThat(countAs(secondId, null, "ticketOrder")).isEqualTo(2L);
-        assertThat(countAs(secondId, null, "ticket")).isEqualTo(5L);
+        assertThat(countAs(secondId, null, "ticket")).isEqualTo(2L);
     }
 
     @Test
