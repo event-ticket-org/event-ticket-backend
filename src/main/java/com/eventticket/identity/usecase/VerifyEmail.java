@@ -50,10 +50,18 @@ public class VerifyEmail {
                             "That verification link has expired or has already been used.");
                 });
 
+        // Explicit saves, because there is no dirty checking here.
+        //
+        // Under JPA a loaded entity is managed: mutating it was enough, and the flush at commit
+        // wrote the change. MongoDB has no persistence context and no managed state, so an
+        // object loaded, mutated and not saved is an object that was never changed. Nothing
+        // warns, nothing fails, and the transaction commits successfully having done nothing.
         token.consume(now);
+        tokens.save(token);
 
         AppUser user = users.findOrThrow(token.userId());
         user.markEmailVerified();
+        users.save(user);
 
         log.info("Verified email userId={}", user.id());
         return sessions.issueFor(user, null);

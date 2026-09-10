@@ -1,5 +1,8 @@
 package com.eventticket.checkout;
 
+import java.time.Instant;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Criteria;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.CheckoutRequest;
@@ -53,12 +56,13 @@ class SeatHoldConcurrencyTest extends ApiTest {
         assertThat(refused.get()).isEqualTo(BUYERS - 1);
 
         // And the database agrees: one hold, on one seat, for one order.
-        assertThat(jdbc.queryForObject(
-                "select count(*) from event_seat where id = ? and held_until > now()",
-                Long.class, contested)).isEqualTo(1L);
-        assertThat(jdbc.queryForObject(
-                "select count(distinct held_by_order_id) from event_seat where id = ?",
-                Long.class, contested)).isEqualTo(1L);
+        assertThat(countIn("eventSeat", Criteria.where("_id").is(contested)
+                .and("heldUntil").gt(Instant.now()))).isEqualTo(1L);
+        // count(distinct ...) has no direct counterpart; distinct returns the values and the
+        // count is taken here.
+        assertThat(mongo.findDistinct(
+                Query.query(Criteria.where("_id").is(contested)), "heldByOrderId",
+                "eventSeat", Object.class)).hasSize(1);
     }
 
     @Test
@@ -93,9 +97,8 @@ class SeatHoldConcurrencyTest extends ApiTest {
 
         assertThat(created.get()).isEqualTo(1);
         assertThat(refused.get()).isEqualTo(BUYERS - 1);
-        assertThat(jdbc.queryForObject(
-                "select count(*) from event_seat where event_id = ? and held_until > now()",
-                Long.class, eventId)).isEqualTo(6L);
+        assertThat(countIn("eventSeat", Criteria.where("eventId").is(eventId)
+                .and("heldUntil").gt(Instant.now()))).isEqualTo(6L);
     }
 
     private void raceFor(List<TokenPair> buyers, UUID eventId, List<UUID> seats,

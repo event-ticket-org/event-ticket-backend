@@ -72,11 +72,19 @@ public class ResetPassword {
                             "That reset link has expired or has already been used. Ask for a new one.");
                 });
 
+        // Explicit saves, because there is no dirty checking here.
+        //
+        // Under JPA a loaded entity is managed: mutating it was enough, and the flush at commit
+        // wrote the change. MongoDB has no persistence context and no managed state, so an
+        // object loaded, mutated and not saved is an object that was never changed. Nothing
+        // warns, nothing fails, and the transaction commits successfully having done nothing.
         token.consume(now);
+        tokens.save(token);
 
         AppUser user = users.findOrThrow(token.userId());
         user.changePassword(passwordEncoder.encode(newPassword));
         user.markEmailVerified();
+        users.save(user);
 
         refreshTokens.revokeAllFor(user.id(), now);
 

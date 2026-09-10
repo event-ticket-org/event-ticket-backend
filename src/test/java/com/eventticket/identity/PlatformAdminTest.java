@@ -1,5 +1,9 @@
 package com.eventticket.identity;
 
+import org.springframework.data.mongodb.core.query.Update;
+import org.springframework.data.mongodb.core.query.Collation;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Criteria;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.Me;
@@ -45,8 +49,14 @@ class PlatformAdminTest extends ApiTest {
         // The other order, and the usual one: somebody signs up, finds the manager screens
         // unreachable because nothing can approve their Organization, and adds their address
         // to the configuration. Clearing the column reproduces that account exactly.
-        jdbc.update("update app_user set platform_admin = false where lower(email) = lower(?)",
-                PLATFORM_ADMIN_EMAIL);
+        // The SQL folded case with lower() on both sides. Here the collation does it - and it
+        // has to be asked for explicitly, because a query without one is case-sensitive even
+        // against an index that was built to be case-insensitive.
+        mongo.updateMulti(
+                Query.query(Criteria.where("email").is(PLATFORM_ADMIN_EMAIL))
+                        .collation(Collation.of("en").strength(2)),
+                new Update().set("platformAdmin", false),
+                "appUser");
         assertThat(me(admin).getPlatformAdmin()).isFalse();
 
         bootstrap.promoteConfiguredAdmins();

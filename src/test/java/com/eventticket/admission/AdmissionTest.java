@@ -1,5 +1,7 @@
 package com.eventticket.admission;
 
+import java.time.Instant;
+import org.springframework.data.mongodb.core.query.Criteria;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.Error;
@@ -143,7 +145,7 @@ class AdmissionTest extends ApiTest {
     void voidTicketsCannotBeAdmitted() {
         Door door = openDoor();
         String code = door.codes().get(0);
-        jdbc.update("update ticket set status = 'VOID' where code_lookup = ?", lookupOf(code));
+        setField("ticket", Criteria.where("codeLookup").is(lookupOf(code)), "status", "VOID");
 
         ScanResult result = scan(door.staff(), door.eventId(), code, "gate-1");
 
@@ -176,10 +178,9 @@ class AdmissionTest extends ApiTest {
         scan(door.staff(), door.eventId(), "not-a-ticket", "gate-2");
 
         assertThat(scansFor(door.eventId())).isEqualTo(3L);
-        assertThat(jdbc.queryForList("select outcome from scan order by occurred_at", String.class))
+        assertThat(readFields("scan", new Criteria(), "outcome", String.class, "occurredAt"))
                 .containsExactly("ADMITTED", "ALREADY_REDEEMED", "UNKNOWN_CODE");
-        assertThat(jdbc.queryForObject(
-                "select count(*) from scan where device_id = 'gate-1'", Long.class)).isEqualTo(2L);
+        assertThat(countIn("scan", Criteria.where("deviceId").is("gate-1"))).isEqualTo(2L);
     }
 
     @Test
@@ -276,15 +277,18 @@ class AdmissionTest extends ApiTest {
      * to - the first version of this helper moved two of them and the constraint caught it.
      */
     private void reschedule(UUID eventId, String startsOffset, String doorsOffset, String endsOffset) {
-        jdbc.update("update event set starts_at = now() + interval '" + startsOffset + "', "
-                + "doors_open_at = now() + interval '" + doorsOffset + "', "
-                + "ends_at = now() + interval '" + endsOffset + "' where id = ?", eventId);
+        // Postgres parsed "2 hours" itself. There is no interval type here and no server-side
+        // now(), so the arithmetic moves into the JVM - which also moves the clock the window is
+        // measured against from the database to the application.
+        Criteria event = Criteria.where("_id").is(eventId);
+        setField("event", event, "startsAt", Instant.now().plus(parse(startsOffset)));
+        setField("event", event, "doorsOpenAt", Instant.now().plus(parse(doorsOffset)));
+        setField("event", event, "endsAt", Instant.now().plus(parse(endsOffset)));
     }
 
     /** A second event of the same Organization: the hall next door, sharing its staff. */
     private UUID secondEventAt(Door door) {
-        UUID venueId = jdbc.queryForObject("select venue_id from event where id = ?",
-                UUID.class, door.eventId());
+        UUID venueId = readField("event", door.eventId(), "venueId", UUID.class);
         Event second = createEvent(door.manager(), venueId, "The Other Hall", SOON, DOORS_OPEN, ENDS);
         priceTier(door.manager(), second.getId(), "Standard", 250_000);
         publish(door.manager(), second.getId(), Event.class);
@@ -292,15 +296,36 @@ class AdmissionTest extends ApiTest {
     }
 
     private long scansFor(UUID eventId) {
-        return jdbc.queryForObject("select count(*) from scan where event_id = ?", Long.class, eventId);
+        return countIn("scan", Criteria.where("eventId").is(eventId));
     }
 
     private String ticketStatus(String code) {
-        return jdbc.queryForObject("select status from ticket where code_lookup = ?",
-                String.class, lookupOf(code));
+        return readFieldWhere("ticket", Criteria.where("codeLookup").is(lookupOf(code)),
+                "status", String.class);
     }
 
     private static String lookupOf(String code) {
         return code.split("-")[1];
+    }
+
+    /** {@code interval '-2 hours'} and friends, which SQL understood and Java has to be told. */
+    private static java.time.Duration parse(String interval) {
+        java.util.regex.Matcher m =
+                java.util.regex.Pattern.compile("(-?\\d+)\\s*(\\w+)").matcher(interval.trim());
+        if (!m.find()) {
+            throw new IllegalArgumentException("not an interval: " + interval);
+        }
+        long amount = Long.parseLong(m.group(1));
+        String unit = m.group(2).toLowerCase(java.util.Locale.ROOT);
+        if (unit.startsWith("minute")) {
+            return java.time.Duration.ofMinutes(amount);
+        }
+        if (unit.startsWith("hour")) {
+            return java.time.Duration.ofHours(amount);
+        }
+        if (unit.startsWith("day")) {
+            return java.time.Duration.ofDays(amount);
+        }
+        throw new IllegalArgumentException("unsupported interval unit: " + unit);
     }
 }

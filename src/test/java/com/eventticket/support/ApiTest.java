@@ -32,6 +32,7 @@ import com.eventticket.api.model.VerifyEmailRequest;
 import com.eventticket.payment.support.FakePaymentProvider;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +50,9 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.web.client.ResponseErrorHandler;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.DefaultUriBuilderFactory;
@@ -74,7 +77,7 @@ public abstract class ApiTest {
     protected static final String PLATFORM_ADMIN_EMAIL = "platform-admin@example.com";
 
     @Autowired protected RecordingEmailSender email;
-    @Autowired protected JdbcTemplate jdbc;
+    @Autowired protected MongoTemplate mongo;
     @Autowired protected FakePaymentProvider fakeProvider;
 
     @LocalServerPort private int port;
@@ -103,12 +106,19 @@ public abstract class ApiTest {
     @BeforeEach
     void resetState() {
         email.clear();
-        // Order matters: memberships reference both sides.
-        jdbc.execute("truncate audit_entry, scan, email_delivery, payment_event, payment_session, "
-                + "ticket, order_seat, ticket_order, event_seat, event_pricing_tier, event, "
-                + "venue, membership, refresh_token, email_verification_token, password_reset_token, "
-                + "organization, "
-                + "app_user cascade");
+        // Every collection, dropped. `truncate ... cascade` named eighteen tables in dependency
+        // order because a foreign key would otherwise refuse the statement - the ordering was
+        // doing real work, and forgetting a table was a compile-time-ish error you found at
+        // once. Nothing here depends on order, because nothing here refers to anything, and a
+        // collection left out of this list simply leaks state into the next test.
+        //
+        // Asking the database which collections exist, rather than listing them, for exactly
+        // that reason. The old list had already drifted: `refund` was missing from it and
+        // survived only by cascading from ticket_order.
+        mongo.getCollectionNames().stream()
+                .filter(name -> !name.startsWith("system."))
+                .filter(name -> !name.equals("mongockChangeLog") && !name.equals("mongockLock"))
+                .forEach(name -> mongo.remove(new Query(), name));
     }
 
     /** Registers, follows the emailed verification link, and returns a signed-in session. */
@@ -307,10 +317,72 @@ public abstract class ApiTest {
         return exchange(HttpMethod.GET, "/orders/" + order.getId(), buyer, null, Order.class).getBody();
     }
 
+    // ---------------------------------------------------------------------------------
+    // Reaching past the API, the MongoDB way.
+    //
+    // Sixty-one tests drove the application over HTTP and then checked the database directly,
+    // or shifted a clock in it to make an expiry testable. That is legitimate - a hold that
+    // lapses in ten minutes cannot be waited out - but it is also the coupling that made those
+    // tests a rewrite rather than a recompile.
+    //
+    // These helpers exist so the rewrite happened once, here, instead of at forty call sites.
+    // Worth noticing what is missing: every SQL statement they replace named columns, and
+    // Postgres refused the statement if a column did not exist. A misspelt field name below
+    // matches nothing and the assertion simply reads zero.
+    // ---------------------------------------------------------------------------------
+
+    protected long countIn(String collection) {
+        return mongo.count(new Query(), collection);
+    }
+
+    protected long countIn(String collection, Criteria criteria) {
+        return mongo.count(new Query(criteria), collection);
+    }
+
+    protected <T> T readField(String collection, Object id, String field, Class<T> type) {
+        return readFieldWhere(collection, Criteria.where("_id").is(id), field, type);
+    }
+
+    protected <T> T readFieldWhere(String collection, Criteria criteria, String field, Class<T> type) {
+        org.bson.Document found = mongo.findOne(new Query(criteria), org.bson.Document.class, collection);
+        return found == null ? null : type.cast(found.get(field));
+    }
+
+    protected <T> List<T> readFields(String collection, String field, Class<T> type) {
+        return readFields(collection, new Criteria(), field, type, null);
+    }
+
+    protected <T> List<T> readFields(String collection, Criteria criteria, String field,
+                                     Class<T> type, String sortBy) {
+        Query query = new Query(criteria);
+        if (sortBy != null) {
+            query.with(org.springframework.data.domain.Sort.by(sortBy));
+        }
+        return mongo.find(query, org.bson.Document.class, collection).stream()
+                .map(document -> type.cast(document.get(field)))
+                .toList();
+    }
+
+    protected long setField(String collection, Criteria criteria, String field, Object value) {
+        return mongo.updateMulti(new Query(criteria),
+                new org.springframework.data.mongodb.core.query.Update().set(field, value),
+                collection).getModifiedCount();
+    }
+
+    /** Makes a hold lapse without waiting ten minutes for it. */
+    protected void expireHoldsOf(UUID orderId) {
+        setField("eventSeat", Criteria.where("heldByOrderId").is(orderId),
+                "heldUntil", Instant.now().minusSeconds(60));
+        setField("ticketOrder", Criteria.where("_id").is(orderId),
+                "holdExpiresAt", Instant.now().minusSeconds(60));
+    }
+
     /** The provider's own handle for an attempt, which a confirmation names. */
     protected String providerRefOf(PaymentSession session) {
-        return jdbc.queryForObject("select provider_ref from payment_session where id = ?",
-                String.class, session.getId());
+        org.bson.Document found = mongo.findOne(
+                new Query(Criteria.where("_id").is(session.getId())), org.bson.Document.class,
+                "paymentSession");
+        return found == null ? null : found.getString("providerRef");
     }
 
     protected <T> ResponseEntity<T> exchange(HttpMethod method, String path, TokenPair session,

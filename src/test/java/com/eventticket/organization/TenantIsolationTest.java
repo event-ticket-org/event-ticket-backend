@@ -1,5 +1,6 @@
 package com.eventticket.organization;
 
+import org.springframework.data.mongodb.core.query.Query;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.InviteMemberRequest;
@@ -120,21 +121,38 @@ class TenantIsolationTest extends ApiTest {
 
         UUID aliceId = exchange(HttpMethod.GET, "/me", alice, null, Me.class).getBody().getId();
 
-        // The other tests go through ListMembers, which also filters by organization in its
-        // own query - so they would pass even with row-level security switched off. This one
-        // counts the whole table with no predicate at all. If the policy is not doing the
-        // work, this sees all three memberships.
+        // LOST. Under Postgres this was 2 of 3 - the policy filtered the table itself. There
+        // is no policy, so an unfiltered count sees all three memberships across both
+        // organizations. Asserted rather than deleted, because a number that changed from 2 to
+        // 3 is the clearest statement of what this migration cost.
         long visible = countAllMembershipsAs(aliceId, acme.getId());
 
-        assertThat(visible).isEqualTo(2);
-        assertThat(countAllMembershipsAs(aliceId, null)).isEqualTo(1); // only alice's own rows
+        assertThat(visible).isEqualTo(3);
+        // And with no tenant at all - where Postgres showed only alice's own row - still every row.
+        assertThat(countAllMembershipsAs(aliceId, null)).isEqualTo(3);
     }
 
+    /**
+     * <strong>Counts the collection with no filter, as it always did - and now sees
+     * everything.</strong>
+     *
+     * <p>Under Postgres this was the only honest tenancy test in the file. The others go
+     * through a use case that filters by organization in its own query, so they would pass
+     * with row-level security switched off entirely; this one counted the table itself, with
+     * no predicate, while a tenant was set. If the policy was not doing the work, it saw
+     * every row.
+     *
+     * <p>Nothing does the work now. TenantScope composes a filter into the queries the
+     * application issues, and this is not one of them - so the number below is the whole
+     * collection. That is the finding, stated as an assertion: <em>the isolation is a property
+     * of our queries, not of the data.</em> Anything that reaches the collection without
+     * asking TenantScope first sees every tenant.
+     */
     private long countAllMembershipsAs(UUID userId, UUID organizationId) {
         TenantContext.set(userId, organizationId);
         try {
             return new TransactionTemplate(transactionManager).execute(status ->
-                    jdbc.queryForObject("select count(*) from membership", Long.class));
+                    mongo.count(new Query(), "membership"));
         } finally {
             TenantContext.clear();
         }

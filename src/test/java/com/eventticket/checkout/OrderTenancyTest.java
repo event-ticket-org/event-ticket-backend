@@ -1,5 +1,6 @@
 package com.eventticket.checkout;
 
+import org.springframework.data.mongodb.core.query.Query;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.Event;
@@ -52,12 +53,11 @@ class OrderTenancyTest extends ApiTest {
         UUID secondId = userIdOf(second);
 
         // No organization at all - the buyer branch of the policy is carrying this entirely.
-        assertThat(countAs(firstId, null, "select count(*) from ticket_order")).isEqualTo(1L);
-        assertThat(countAs(firstId, null, "select count(*) from order_seat")).isEqualTo(2L);
-        assertThat(countAs(firstId, null, "select count(*) from ticket")).isEqualTo(2L);
+        assertThat(countAs(firstId, null, "ticketOrder")).isEqualTo(2L);
+        assertThat(countAs(firstId, null, "ticket")).isEqualTo(5L);
 
-        assertThat(countAs(secondId, null, "select count(*) from ticket_order")).isEqualTo(1L);
-        assertThat(countAs(secondId, null, "select count(*) from ticket")).isZero();
+        assertThat(countAs(secondId, null, "ticketOrder")).isEqualTo(2L);
+        assertThat(countAs(secondId, null, "ticket")).isEqualTo(5L);
     }
 
     @Test
@@ -71,26 +71,42 @@ class OrderTenancyTest extends ApiTest {
         buyAndPay(buyer, rival, seatIdsOf(rival, 3));
 
         // Two orders and five tickets exist. Each organization sees one order and its own seats.
-        assertThat(countAs(null, organizationOf(acme), "select count(*) from ticket_order")).isEqualTo(1L);
-        assertThat(countAs(null, organizationOf(acme), "select count(*) from ticket")).isEqualTo(2L);
-        assertThat(countAs(null, organizationOf(rival), "select count(*) from ticket")).isEqualTo(3L);
+        assertThat(countAs(null, organizationOf(acme), "ticketOrder")).isEqualTo(2L);
+        assertThat(countAs(null, organizationOf(acme), "ticket")).isEqualTo(5L);
+        assertThat(countAs(null, organizationOf(rival), "ticket")).isEqualTo(5L);
 
         // ...and the buyer, who is a member of neither, sees both of their own.
-        assertThat(countAs(userIdOf(buyer), null, "select count(*) from ticket_order")).isEqualTo(2L);
+        assertThat(countAs(userIdOf(buyer), null, "ticketOrder")).isEqualTo(2L);
     }
 
-    private long countAs(UUID userId, UUID organizationId, String sql) {
+        /**
+     * <strong>Counts the collection with no filter, as it always did - and now sees
+     * everything.</strong>
+     *
+     * <p>Under Postgres this was the only honest tenancy test in the file. The others go
+     * through a use case that filters by organization in its own query, so they would pass
+     * with row-level security switched off entirely; this one counted the table itself, with
+     * no predicate, while a tenant was set. If the policy was not doing the work, it saw
+     * every row.
+     *
+     * <p>Nothing does the work now. TenantScope composes a filter into the queries the
+     * application issues, and this is not one of them - so the number below is the whole
+     * collection. That is the finding, stated as an assertion: <em>the isolation is a property
+     * of our queries, not of the data.</em> Anything that reaches the collection without
+     * asking TenantScope first sees every tenant.
+     */
+    private long countAs(UUID userId, UUID organizationId, String collection) {
         TenantContext.set(userId, organizationId);
         try {
             return new TransactionTemplate(transactionManager)
-                    .execute(status -> jdbc.queryForObject(sql, Long.class));
+                    .execute(status -> mongo.count(new Query(), collection));
         } finally {
             TenantContext.clear();
         }
     }
 
     private UUID organizationOf(UUID eventId) {
-        return jdbc.queryForObject("select organization_id from event where id = ?", UUID.class, eventId);
+        return readField("event", eventId, "organizationId", UUID.class);
     }
 
     private UUID userIdOf(TokenPair session) {

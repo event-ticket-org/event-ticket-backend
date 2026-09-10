@@ -25,15 +25,21 @@ public class TestcontainersConfiguration {
 	 * only way to get transactions at all. A standalone {@code mongod} refuses them outright,
 	 * because MongoDB implements them on top of the oplog and a standalone has none.
 	 *
-	 * <p>{@code MongoDBContainer} runs {@code rs.initiate()} for us and waits for a primary,
-	 * so this line is the whole of it. It is worth knowing what it is doing: the equivalent
-	 * Postgres container needed no such thing, since a single Postgres has always been able to
-	 * begin a transaction.
+	 * <p><strong>{@code withReplicaSet()} is not optional and is easy to miss.</strong>
+	 * Testcontainers 1.x initiated a replica set by default; 2.x made it opt-in, so without
+	 * this call the container is a standalone {@code mongod} and every transaction fails with
+	 * {@code IllegalOperation: Transaction numbers are only allowed on a replica set member}.
+	 *
+	 * <p>The way it fails is the part worth remembering. The application context started
+	 * cleanly and the smoke test passed - the failures were logged and swallowed, because
+	 * nothing in this codebase asks whether the datastore can do transactions until something
+	 * tries one. The equivalent Postgres container needed no such thing: a single Postgres has
+	 * been able to begin a transaction since before replication existed.
 	 */
 	@Bean
 	@ServiceConnection
 	public MongoDBContainer mongoContainer() {
-		return new MongoDBContainer(DockerImageName.parse("mongo:8.0"));
+		return new MongoDBContainer(DockerImageName.parse("mongo:8.0")).withReplicaSet();
 	}
 
 	/**

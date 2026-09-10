@@ -9,6 +9,8 @@ spring:
       # application started without the environment refuses to boot rather than quietly
       # using a published one. The URI above carries no credentials at all - a deployment
       # supplies a full mongodb:// URI including them.
+      # How a UUID is encoded is set in MongoUuidConfig - this property does not reach
+      # the client that Testcontainers' service connection builds. See that class.
       auto-index-creation: false
       # Deliberately off. Spring Data can create indexes from @Indexed annotations at
       # startup, and it is the wrong mechanism for the same reason `ddl-auto: validate`

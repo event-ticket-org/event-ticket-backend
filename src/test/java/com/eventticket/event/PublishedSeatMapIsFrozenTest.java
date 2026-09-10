@@ -1,8 +1,6 @@
 package com.eventticket.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.eventticket.api.model.Event;
 import com.eventticket.api.model.TokenPair;
@@ -14,118 +12,124 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.mongodb.core.query.Criteria;
 
 /**
- * KB invariant 12 - nothing a sold Ticket depends on may change under it - as the database
- * enforces it.
+ * KB invariant 12 - nothing a sold Ticket depends on may change under it - <strong>is no longer
+ * enforced by the database, and this test exists to prove that rather than to pretend
+ * otherwise.</strong>
  *
- * <p>These tests go around the application entirely and issue the forbidden statements
- * directly, as the schema owner, which in this environment is a superuser. That is the point:
- * a rule kept only in a use case is a rule the next use case can forget, and one kept in an
- * application check cannot be tested this way at all.
+ * <h2>What this file used to do</h2>
  *
- * <p>Every refusal here is paired with the same statement against a Draft, which must succeed.
- * Without that pair the tests would pass just as happily against a trigger that refuses
- * everything, or one that was never installed and a typo in the SQL.
+ * <p>It went around the application entirely and issued the forbidden statements directly, as
+ * the schema owner. {@code event_seat_frozen} and {@code event_frozen} refused each one, and
+ * every refusal was paired with the same statement against a Draft, which had to succeed - so
+ * the test could not pass against a trigger that refused everything, or one that was never
+ * installed.
+ *
+ * <p>That was the strongest guarantee in the system. A rule kept only in a use case is a rule
+ * the next use case can forget; a rule in a trigger cannot be forgotten by anybody, including
+ * a migration script, a support engineer with a {@code psql} session, or a bug.
+ *
+ * <h2>Why it cannot be kept</h2>
+ *
+ * <p>MongoDB has no triggers. {@code $jsonSchema} validation is the nearest thing and it is not
+ * near: a validator sees the document being written and <strong>cannot see the document's
+ * previous value</strong>, so "this field may not change once published" is inexpressible. There
+ * is no formulation of it that MongoDB can enforce.
+ *
+ * <p>So the checks moved into {@code Event.requireStillEditable()} and its neighbours, where
+ * they were <em>already</em> duplicated - the application always refused these too, so that a
+ * caller got a civil error instead of a constraint violation. What is gone is the second line
+ * of defence, and with it the ability to test the rule this way at all.
+ *
+ * <h2>What these tests assert now</h2>
+ *
+ * <p>Each one performs a write the database used to refuse and asserts that <strong>it
+ * succeeds</strong> - that the seat map of a published Event can be silently corrupted by
+ * anything holding a connection. They pass, and they are failures. Read them as the receipt for
+ * a guarantee that was traded away, and keep them: if MongoDB ever grows a mechanism for this,
+ * these are the tests that will start failing and say so.
  */
 class PublishedSeatMapIsFrozenTest extends ApiTest {
 
     private static final OffsetDateTime NEXT_MONTH = OffsetDateTime.now().plus(30, ChronoUnit.DAYS);
 
     @Test
-    @DisplayName("a published event's seat cannot be relabelled, moved or re-tiered")
-    void seatsCannotBeChanged() {
+    @DisplayName("LOST: a published event's seat can now be relabelled, moved and re-tiered")
+    void seatsCanBeChangedAndNothingRefuses() {
         UUID published = publishedEventId();
         UUID seat = anySeatOf(published);
 
-        assertThatThrownBy(() -> jdbc.update("update event_seat set label = 'HACKED' where id = ?", seat))
-                .isInstanceOf(DataIntegrityViolationException.class)
-                .hasMessageContaining("immutable");
+        assertThat(setField("eventSeat", Criteria.where("_id").is(seat), "label", "HACKED"))
+                .isEqualTo(1L);
+        assertThat(setField("eventSeat", Criteria.where("_id").is(seat), "x", 999.0))
+                .isEqualTo(1L);
+        assertThat(setField("eventSeat", Criteria.where("_id").is(seat), "tierName", "Free"))
+                .isEqualTo(1L);
 
-        assertThatThrownBy(() -> jdbc.update("update event_seat set x = 999 where id = ?", seat))
-                .isInstanceOf(DataIntegrityViolationException.class);
-
-        assertThatThrownBy(() -> jdbc.update("update event_seat set tier_name = 'Free' where id = ?", seat))
-                .isInstanceOf(DataIntegrityViolationException.class);
-
-        // ...but availability is live, and is meant to be.
-        assertThatCode(() -> jdbc.update("update event_seat set for_sale = false where id = ?", seat))
-                .doesNotThrowAnyException();
+        // The label a sold Ticket refers to is now something else, and nothing objected.
+        assertThat(readField("eventSeat", seat, "label", String.class)).isEqualTo("HACKED");
     }
 
     @Test
-    @DisplayName("seats cannot be added to or removed from a published event, but can from a draft")
-    void seatsCannotBeAddedOrRemoved() {
+    @DisplayName("LOST: seats can now be added to and removed from a published event")
+    void seatsCanBeAddedAndRemoved() {
         UUID published = publishedEventId();
         UUID seat = anySeatOf(published);
-        UUID organizationId = organizationOf(published);
+        long before = countIn("eventSeat", Criteria.where("eventId").is(published));
 
-        assertThatThrownBy(() -> insertSeat(organizationId, published, "EXTRA"))
-                .isInstanceOf(DataIntegrityViolationException.class);
-        assertThatThrownBy(() -> jdbc.update("delete from event_seat where id = ?", seat))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        mongo.remove(new org.springframework.data.mongodb.core.query.Query(
+                Criteria.where("_id").is(seat)), "eventSeat");
 
-        // The control. The same statement against a Draft succeeds, so the refusals above are
-        // the trigger reading published_at and not the statement being wrong.
-        UUID draft = draftEventIdIn(organizationId);
-        assertThatCode(() -> insertSeat(organizationId, draft, "EXTRA"))
-                .doesNotThrowAnyException();
+        assertThat(countIn("eventSeat", Criteria.where("eventId").is(published)))
+                .isEqualTo(before - 1);
     }
 
     @Test
-    @DisplayName("a published event cannot change venue or return to draft")
-    void publishedEventCannotBeUnpublished() {
+    @DisplayName("LOST: a published event can now return to draft and change venue")
+    void publishedEventCanBeUnpublished() {
         UUID published = publishedEventId();
 
-        assertThatThrownBy(() -> jdbc.update(
-                "update event set status = 'DRAFT' where id = ?", published))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(setField("event", Criteria.where("_id").is(published), "status", "DRAFT"))
+                .isEqualTo(1L);
+        assertThat(setField("event", Criteria.where("_id").is(published), "publishedAt", null))
+                .isEqualTo(1L);
 
-        assertThatThrownBy(() -> jdbc.update(
-                "update event set published_at = null where id = ?", published))
-                .isInstanceOf(DataIntegrityViolationException.class);
-
-        assertThatThrownBy(() -> jdbc.update(
-                "update event set venue_id = (select id from venue where name = 'Other Room') "
-                        + "where id = ?", published))
-                .isInstanceOf(DataIntegrityViolationException.class);
+        // An Event that has sold tickets is now a Draft again, which V4 spent a trigger and a
+        // named exception making impossible.
+        assertThat(readField("event", published, "publishedAt", Object.class)).isNull();
     }
 
-    private void insertSeat(UUID organizationId, UUID eventId, String label) {
-        jdbc.update("insert into event_seat (organization_id, event_id, label, x, y, tier_name) "
-                + "values (?, ?, ?, 99, 99, 'Standard')", organizationId, eventId, label);
+    // No "the application still refuses it" test here, deliberately. The application's own
+    // checks are covered where they belong - EventLifecycleTest drives them over HTTP - and a
+    // duplicate here would blur what this file is for. This file is about the floor underneath
+    // those checks, and the floor is gone.
+
+    private UUID venueId;
+
+    private TokenPair approvedManagerWithVenue() {
+        TokenPair alice = signUp("alice+" + UUID.randomUUID() + "@example.com");
+        var organization = createOrganization(alice, "Acme Events");
+        approve(organization);
+        TokenPair manager = switchTo(alice, organization);
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        putSeatMap(manager, venue.getId(), SeatMaps.block("Standard", 2, 5));
+        venueId = venue.getId();
+        return manager;
     }
 
     private UUID anySeatOf(UUID eventId) {
-        return jdbc.queryForObject("select id from event_seat where event_id = ? limit 1",
-                UUID.class, eventId);
-    }
-
-    private UUID organizationOf(UUID eventId) {
-        return jdbc.queryForObject("select organization_id from event where id = ?", UUID.class, eventId);
-    }
-
-    private UUID draftEventIdIn(UUID organizationId) {
-        return jdbc.queryForObject(
-                "select id from event where organization_id = ? and published_at is null limit 1",
-                UUID.class, organizationId);
+        return readFieldWhere("eventSeat", Criteria.where("eventId").is(eventId), "_id", UUID.class);
     }
 
     /** An approved organization with one published event, one draft, and a spare venue. */
     private UUID publishedEventId() {
-        TokenPair alice = signUp("alice@example.com");
-        var organization = createOrganization(alice, "Acme Events");
-        approve(organization);
-        TokenPair manager = switchTo(alice, organization);
-
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
-        putSeatMap(manager, venue.getId(), SeatMaps.block("Standard", 2, 5));
+        TokenPair manager = approvedManagerWithVenue();
         createVenue(manager, "Other Room", "Ho Chi Minh City");
+        createEvent(manager, venueId, "Still Cooking", NEXT_MONTH);
 
-        createEvent(manager, venue.getId(), "Still Cooking", NEXT_MONTH);
-
-        Event event = createEvent(manager, venue.getId(), "Live in Saigon", NEXT_MONTH);
+        Event event = createEvent(manager, venueId, "Live in Saigon", NEXT_MONTH);
         priceTier(manager, event.getId(), "Standard", 250_000);
         Event published = publish(manager, event.getId(), Event.class).getBody();
 
