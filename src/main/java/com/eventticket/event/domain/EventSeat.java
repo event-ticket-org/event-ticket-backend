@@ -1,10 +1,7 @@
 package com.eventticket.event.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -19,36 +16,27 @@ import java.util.UUID;
  * refuses to change them once the Event is published. {@code forSale} is not: availability is
  * live, and requirements/003 criterion 11 lets capacity grow.
  */
-@Entity
-@Table(name = "event_seat")
+@Document(collection = "eventSeat")
 public class EventSeat {
 
     /** Mirrors the contract's {@code SeatAvailability}. */
     public enum Availability { AVAILABLE, HELD, SOLD, NOT_FOR_SALE }
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "event_id", nullable = false)
     private UUID eventId;
 
-    @Column(nullable = false)
     private String label;
 
-    @Column(nullable = false)
     private double x;
 
-    @Column(nullable = false)
     private double y;
 
-    @Column(name = "tier_name", nullable = false)
     private String tierName;
 
-    @Column(name = "for_sale", nullable = false)
     private boolean forSale = true;
 
     /**
@@ -59,13 +47,10 @@ public class EventSeat {
      * <p>Expiry needs nothing to happen. A lapsed hold is a timestamp in the past, so invariant
      * 7 - "expiry releases the Event Seat with no trace" - is literally true.
      */
-    @Column(name = "held_until")
     private Instant heldUntil;
 
-    @Column(name = "held_by_order_id")
     private UUID heldByOrderId;
 
-    @Column(name = "sold_at")
     private Instant soldAt;
 
     protected EventSeat() {}

@@ -4,7 +4,7 @@ import com.eventticket.shared.error.ApiException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 import com.eventticket.organization.domain.Membership;
 import com.eventticket.organization.domain.Organization;
 
@@ -14,7 +14,7 @@ import com.eventticket.organization.domain.Organization;
  * organization id as a parameter: the tenant comes from the token, never from a caller
  * (knowledge base ADR-0004).
  */
-public interface MembershipRepository extends JpaRepository<Membership, UUID> {
+public interface MembershipRepository extends MongoRepository<Membership, UUID> {
 
     public List<Membership> findByOrganizationId(UUID organizationId);
 

@@ -1,11 +1,8 @@
 package com.eventticket.event.domain;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import com.eventticket.shared.money.Money;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.util.UUID;
 
 /**
@@ -21,26 +18,20 @@ import java.util.UUID;
  * (criterion 10). Nothing is versioned here to achieve that: a Ticket and a Seat Hold capture
  * their price when they are created, so a later edit cannot reach back to them.
  */
-@Entity
-@Table(name = "event_pricing_tier")
+@Document(collection = "eventPricingTier")
 public class PricingTier {
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "event_id", nullable = false)
     private UUID eventId;
 
-    @Column(nullable = false)
     private String name;
 
     private Long amount;
 
-    @Column(nullable = false)
     private String currency = Money.Currency.VND.name();
 
     protected PricingTier() {}

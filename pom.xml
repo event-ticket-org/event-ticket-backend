@@ -51,11 +51,27 @@
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa</artifactId>
+			<artifactId>spring-boot-starter-data-mongodb</artifactId>
+		</dependency>
+
+		<!--
+			Flyway has no counterpart here, and that is not the same as needing nothing.
+			A collection has no schema to version, but indexes and $jsonSchema validators
+			do: a partial unique index is the only thing standing between this deployment
+			and two live refunds on one order, and it has to be created exactly once, in
+			order, on every environment. Mongock is Flyway's shape for that job -
+			ordered, recorded, idempotent - and the alternative, ensure-on-startup, is a
+			migration system with no history and no way to answer "has this run".
+		-->
+		<dependency>
+			<groupId>io.mongock</groupId>
+			<artifactId>mongock-springboot-v3</artifactId>
+			<version>5.4.4</version>
 		</dependency>
 		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-flyway</artifactId>
+			<groupId>io.mongock</groupId>
+			<artifactId>mongodb-springdata-v4-driver</artifactId>
+			<version>5.4.4</version>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -86,11 +102,6 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
-		<dependency>
-			<groupId>org.flywaydb</groupId>
-			<artifactId>flyway-database-postgresql</artifactId>
-		</dependency>
-
 		<!--
 			Stripe's own SDK rather than four HTTP calls by hand, for one reason: webhook
 			signature verification. `Webhook.constructEvent` implements a scheme with a
@@ -119,23 +130,13 @@
 			<artifactId>s3-transfer-manager</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>org.postgresql</groupId>
-			<artifactId>postgresql</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-actuator-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-data-jpa-test</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.springframework.boot</groupId>
-			<artifactId>spring-boot-starter-flyway-test</artifactId>
+			<artifactId>spring-boot-starter-data-mongodb-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -170,7 +171,7 @@
 		</dependency>
 		<dependency>
 			<groupId>org.testcontainers</groupId>
-			<artifactId>testcontainers-postgresql</artifactId>
+			<artifactId>testcontainers-mongodb</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>

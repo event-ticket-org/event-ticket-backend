@@ -1,52 +1,38 @@
 package com.eventticket.venue.domain;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import com.eventticket.shared.error.ApiException;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * A room an Organization uses, and the Seat Map drawn for it. The map is the reusable asset:
  * drawn once, used by every Event held there (requirements/002).
  */
-@Entity
-@Table(name = "venue")
+@Document(collection = "venue")
 public class Venue {
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(nullable = false)
     private String name;
 
     private String address;
 
     /** Separate from the address because the public listing filters on it (requirements/009). */
-    @Column(nullable = false)
     private String city;
 
     /**
      * An IANA zone. nfr.md stores every instant in UTC and displays it in the Venue's zone, so
      * this is the only place the local wall-clock time of an Event can come from.
      */
-    @Column(nullable = false)
     private String timezone;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "seat_map", nullable = false)
     private SeatMapDocument seatMap = SeatMapDocument.empty();
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected Venue() {}

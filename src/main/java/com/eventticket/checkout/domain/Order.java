@@ -1,15 +1,10 @@
 package com.eventticket.checkout.domain;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.money.Money;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -22,37 +17,27 @@ import java.util.UUID;
  * else. Two records of one fact, deliberately: the seat's is authoritative for availability
  * and the Order's is what a human is looking at.
  */
-@Entity
-@Table(name = "ticket_order")
+@Document(collection = "ticketOrder")
 public class Order {
 
     public enum Status { AWAITING_PAYMENT, PAID, EXPIRED, CANCELLED, REFUNDED }
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "event_id", nullable = false)
     private UUID eventId;
 
     /** A User, not a Member. Buyers are almost never members of the Organization they buy from. */
-    @Column(name = "buyer_user_id", nullable = false)
     private UUID buyerUserId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Status status = Status.AWAITING_PAYMENT;
 
-    @Column(name = "total_amount", nullable = false)
     private long totalAmount;
 
-    @Column(nullable = false)
     private String currency = Money.Currency.VND.name();
 
-    @Column(name = "hold_expires_at")
     private Instant holdExpiresAt;
 
     /**
@@ -63,13 +48,10 @@ public class Order {
      * <p>requirements/008 is what finally acts on it. Until then nothing read this column,
      * which is a state the platform could reach and not leave.
      */
-    @Column(name = "refund_required", nullable = false)
     private boolean refundRequired;
 
-    @Column(name = "paid_at")
     private Instant paidAt;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected Order() {}

@@ -16,8 +16,13 @@
 # (src/test/resources/application.properties), so a clone still runs with no setup. A container
 # does not get this profile and must supply the environment instead.
 spring:
-  datasource:
-    password: eventticket
+  data:
+    mongodb:
+      # No credentials, and that is a real difference worth noticing rather than a
+      # simplification. `mongod` started without --auth accepts anybody, where Postgres
+      # demanded a password even locally. The development database is therefore open by
+      # default, which is exactly the shape of mistake that reaches a deployment.
+      uri: mongodb://localhost:27017/eventticket
 
 app:
   security:

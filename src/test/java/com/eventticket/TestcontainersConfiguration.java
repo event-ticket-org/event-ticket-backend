@@ -6,7 +6,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.MinIOContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.mongodb.MongoDBContainer;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -20,10 +20,20 @@ public class TestcontainersConfiguration {
 
 	static final String BUCKET = "event-ticket-covers";
 
+	/**
+	 * A replica set of one, which is not a preference and not a production shape - it is the
+	 * only way to get transactions at all. A standalone {@code mongod} refuses them outright,
+	 * because MongoDB implements them on top of the oplog and a standalone has none.
+	 *
+	 * <p>{@code MongoDBContainer} runs {@code rs.initiate()} for us and waits for a primary,
+	 * so this line is the whole of it. It is worth knowing what it is doing: the equivalent
+	 * Postgres container needed no such thing, since a single Postgres has always been able to
+	 * begin a transaction.
+	 */
 	@Bean
 	@ServiceConnection
-	public PostgreSQLContainer postgresContainer() {
-		return new PostgreSQLContainer(DockerImageName.parse("postgres:latest"));
+	public MongoDBContainer mongoContainer() {
+		return new MongoDBContainer(DockerImageName.parse("mongo:8.0"));
 	}
 
 	/**

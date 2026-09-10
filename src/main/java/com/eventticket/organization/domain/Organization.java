@@ -1,14 +1,9 @@
 package com.eventticket.organization.domain;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -19,27 +14,20 @@ import java.util.UUID;
  * (requirements/001 criteria 3-5). That gate is the platform's fraud control, and it lives
  * on the entity rather than in a use case so that every caller meets the same answer.
  */
-@Entity
-@Table(name = "organization")
+@Document(collection = "organization")
 public class Organization {
 
     public enum Status { PENDING_APPROVAL, APPROVED, REJECTED }
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(nullable = false)
     private String name;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Status status = Status.PENDING_APPROVAL;
 
-    @Column(name = "decision_reason")
     private String decisionReason;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected Organization() {}

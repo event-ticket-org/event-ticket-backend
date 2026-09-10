@@ -4,7 +4,7 @@ import com.eventticket.shared.error.ApiException;
 import com.eventticket.venue.domain.Venue;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -14,7 +14,7 @@ import org.springframework.data.repository.query.Param;
  * is therefore not the isolation - it is what keeps a manager's own list free of the other
  * organizations' public venues.
  */
-public interface VenueRepository extends JpaRepository<Venue, UUID> {
+public interface VenueRepository extends MongoRepository<Venue, UUID> {
 
     public List<Venue> findByOrganizationIdOrderByNameAsc(UUID organizationId);
 

@@ -4,7 +4,7 @@ import com.eventticket.payment.domain.Refund;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 
 /**
  * No tenant narrows these, for the same reason as {@link PaymentSessionRepository}: the
@@ -12,7 +12,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
  * refund from outside a callback goes through its Order first, and {@code ticket_order} is
  * scoped - so the check happens where the caller is known rather than here.
  */
-public interface RefundRepository extends JpaRepository<Refund, UUID> {
+public interface RefundRepository extends MongoRepository<Refund, UUID> {
 
     public Optional<Refund> findByProviderAndProviderRef(String provider, String providerRef);
 

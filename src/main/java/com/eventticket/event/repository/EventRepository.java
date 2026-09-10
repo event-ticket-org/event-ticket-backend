@@ -9,7 +9,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -27,7 +27,7 @@ import org.springframework.data.repository.query.Param;
  * of a bare parameter in {@code ? is null} and rejects the statement outright, and a query
  * built in two shapes is two queries to keep correct. See {@code PageCursor}.
  */
-public interface EventRepository extends JpaRepository<Event, UUID> {
+public interface EventRepository extends MongoRepository<Event, UUID> {
 
     @Query("""
            select e from Event e

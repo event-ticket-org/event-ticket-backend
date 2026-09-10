@@ -4,12 +4,12 @@ import com.eventticket.shared.error.ApiException;
 import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import com.eventticket.identity.domain.AppUser;
 
-public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
+public interface AppUserRepository extends MongoRepository<AppUser, UUID> {
 
     /** Email is the login identifier and is matched case-insensitively, as the index is. */
     @Query("select u from AppUser u where lower(u.email) = lower(:email)")

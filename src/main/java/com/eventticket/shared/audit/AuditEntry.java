@@ -1,35 +1,35 @@
 package com.eventticket.shared.audit;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.UUID;
 
 /** One recorded action. Append-only: there is deliberately no setter and no delete path. */
-@Entity
-@Table(name = "audit_entry")
+@Document(collection = "auditEntry")
 public class AuditEntry {
 
+    /**
+     * A UUID, where Postgres used {@code BIGSERIAL}. MongoDB has no auto-increment: its two
+     * answers are an {@code ObjectId}, whose leading four bytes are a timestamp and which is
+     * therefore roughly monotonic, or a sequence collection bumped with {@code findAndModify} -
+     * one extra round trip and one contended document per insert.
+     *
+     * <p>Neither is needed here. Nothing reads this id and nothing orders by it; the audit
+     * trail is ordered by {@code occurredAt}, which is what {@code audit_entry_org_idx} sorted
+     * on in Postgres too. The sequence was never carrying meaning, only supplying a key.
+     */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "actor_user_id")
     private UUID actorUserId;
 
-    @Column(nullable = false)
     private String action;
 
     private String subject;
 
-    @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt = Instant.now();
 
     protected AuditEntry() {}

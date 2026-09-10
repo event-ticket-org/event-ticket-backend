@@ -5,12 +5,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface TicketRepository extends JpaRepository<Ticket, UUID> {
+public interface TicketRepository extends MongoRepository<Ticket, UUID> {
 
     /**
      * KB invariant 13: one Ticket, one admission, one Scan. Two devices reading the same code

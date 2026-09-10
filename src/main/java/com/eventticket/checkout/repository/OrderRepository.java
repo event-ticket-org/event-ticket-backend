@@ -7,11 +7,11 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface OrderRepository extends JpaRepository<Order, UUID> {
+public interface OrderRepository extends MongoRepository<Order, UUID> {
 
     /**
      * requirements/006 criterion 5: a buyer's Orders across every Organization, in one place.

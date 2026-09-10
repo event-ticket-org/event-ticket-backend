@@ -1,22 +1,21 @@
 spring:
   application:
     name: event-ticket-backend
-  datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/eventticket}
-    username: ${DATABASE_USERNAME:eventticket}
-    # No default, deliberately. Every credential in this file is written the same way: the
-    # value lives in application-dev.yml and nowhere else, so an application started without
-    # the environment variable refuses to boot instead of quietly using a published one.
-    password: ${DATABASE_PASSWORD}
-  jpa:
-    open-in-view: false          # no lazy loading in the web layer; use cases own their transactions
-    hibernate:
-      ddl-auto: validate         # Flyway owns the schema, never Hibernate
-    properties:
-      hibernate.jdbc.time_zone: UTC
-  flyway:
-    enabled: true
-    locations: classpath:db/migration
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/eventticket}
+      # No default for the password, for the same reason every other credential here has
+      # none: the development value lives in application-dev.yml and nowhere else, so an
+      # application started without the environment refuses to boot rather than quietly
+      # using a published one. The URI above carries no credentials at all - a deployment
+      # supplies a full mongodb:// URI including them.
+      auto-index-creation: false
+      # Deliberately off. Spring Data can create indexes from @Indexed annotations at
+      # startup, and it is the wrong mechanism for the same reason `ddl-auto: validate`
+      # was: an index appearing because a class was annotated is an index nobody reviewed,
+      # created at a moment nobody chose, on a collection that may hold millions of rows.
+      # Indexes are declared as migrations instead - see MongoIndexes.
+
   mail:
     # Absent means there is no mail server, exactly as an absent Stripe key means there is no
     # Stripe: an unconfigured deployment writes its mail to the log rather than failing on the

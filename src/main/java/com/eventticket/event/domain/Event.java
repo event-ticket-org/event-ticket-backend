@@ -1,23 +1,16 @@
 package com.eventticket.event.domain;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.venue.domain.MapElement;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 /**
  * An occasion with tickets on sale. Publishing is the moment the system's promises begin:
@@ -28,34 +21,26 @@ import org.hibernate.type.SqlTypes;
  * database enforces the same rules again in {@code V4__venues_and_events.sql} - these methods
  * are how a caller gets a civil refusal instead of a constraint violation.
  */
-@Entity
-@Table(name = "event")
+@Document(collection = "event")
 public class Event {
 
     public enum Status { DRAFT, PUBLISHED, SALES_CLOSED, COMPLETED, CANCELLED }
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "venue_id", nullable = false)
     private UUID venueId;
 
-    @Column(nullable = false)
     private String title;
 
     private String description;
 
-    @Column(name = "cover_image_url")
     private String coverImageUrl;
 
-    @Column(name = "cover_image_key")
     private String coverImageKey;
 
-    @Column(name = "cover_image_alt")
     private String coverImageAlt;
 
     /**
@@ -63,11 +48,8 @@ public class Event {
      * "none", which is an ordinary state: a small upload has nothing smaller worth making, and
      * a format nothing decodes has none at all.
      */
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "cover_image_renderings")
     private List<CoverRendering> coverImageRenderings;
 
-    @Column(name = "starts_at", nullable = false)
     private Instant startsAt;
 
     /**
@@ -78,20 +60,14 @@ public class Event {
      * arrive before an event begins and leave after it ends - so without these the scan
      * outcomes EVENT_NOT_OPEN and EVENT_ENDED have nothing to measure against.
      */
-    @Column(name = "doors_open_at")
     private Instant doorsOpenAt;
 
-    @Column(name = "ends_at")
     private Instant endsAt;
 
-    @Column(nullable = false)
     private boolean listed = true;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Status status = Status.DRAFT;
 
-    @Column(name = "published_at")
     private Instant publishedAt;
 
     /**
@@ -99,21 +75,16 @@ public class Event {
      * fact about the Event. The per-Order progress requirements/008 criterion 7 asks for is
      * the refund rows, which are the record of the work rather than a second copy of it.
      */
-    @Column(name = "cancelled_at")
     private Instant cancelledAt;
 
-    @Column(name = "cancel_reason")
     private String cancelReason;
 
     /**
      * Copied from the Venue at publish, alongside the seats. Stays a document because nothing
      * is ever ticketed against a stage or an aisle.
      */
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "map_elements", nullable = false)
     private List<MapElement> mapElements = List.of();
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected Event() {}
