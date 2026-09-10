@@ -1,12 +1,13 @@
 # What the migration cost, and what it bought
 
-Measured against the same 185 tests, running the same API, from the same commit.
+Measured against the same suite, running the same API, from the same commit.
 
 ## The number
 
 | | |
 |---|---|
-| Tests passing on MongoDB | **175 of 185** |
+| Tests passing on MongoDB | **181 of 191** |
+| Of which, new tests written for this migration | 6 |
 | Predicted before starting | 113 free / 61 rework / 11 impossible |
 
 **The prediction was wrong in both directions**, and that is the first finding. It was made by
@@ -71,8 +72,15 @@ published** (a published event is public on purpose); owned-by-tenant-**or buyer
 not a member of the organization they buy from). A naive "add `organizationId` everywhere"
 reproduces the first and silently breaks the other two.
 
-`TenantScopeTest` can fail a build when a repository forgets. That is a weaker guarantee, honestly
-stated: Postgres made the mistake *impossible*; the best available here is making it *detectable*.
+`TenantScopeTest` fails the build when a repository exposes a query that narrows by nothing.
+That is a weaker guarantee, honestly stated: Postgres made the mistake *impossible*; the best
+available here is making it *detectable*.
+
+And be precise about how much weaker. Twenty of the twenty-eight queries on those collections
+narrow by a **parent** — an event id, an order id — and are safe only because the caller loaded
+that parent and checked it first. Under RLS they were safe regardless. That list is not an
+exemption list, it is the **risk register**: the exact set of places where isolation stopped
+being a mechanism and became a convention.
 
 ### Triggers
 
@@ -127,10 +135,38 @@ Fewer than the losses, and not where a beginner would guess.
 - **TTL indexes** expire the token collections automatically. Postgres needs a sweeper.
 - **`findOneAndUpdate`** expresses the door — *one conditional update whose modified count is the
   answer* — more directly than SQL does. This is the single place the migration reads better.
-- **Partial unique indexes port one-to-one.** `ticket_one_per_seat WHERE status <> 'VOID'` becomes
-  a `partialFilterExpression`.
+- **Plain unique indexes port exactly** — including `payment_event`'s webhook idempotency key.
+  Partial ones port *nearly*: see the correction below.
 
-## A correction worth carrying into the viva
+## Two corrections worth carrying into the viva
+
+### Partial unique indexes do **not** port one-to-one
+
+Written up as a straight win before it was tried. A `partialFilterExpression` admits `$eq`,
+`$exists`, the range operators, `$type`, `$and`, `$or` and `$in` — and **rejects `$ne`**:
+
+```
+CannotCreateIndex: Expression not supported in partial index: $not
+```
+
+Both of this system's partial indexes were negations (`WHERE status <> 'VOID'`,
+`WHERE status <> 'REFUND_FAILED'`), so both had to become **enumerations of every other value**.
+That is not the same statement: `<> 'VOID'` adapts to a new status automatically and correctly,
+while `$in: ["VALID", "REDEEMED"]` silently stops covering one. Add a ticket status tomorrow and
+the uniqueness rule quietly narrows — no error, no failing test.
+
+### A unique index treats a missing field as null; Postgres treats NULLs as distinct
+
+The difference that would have caused a production incident. `V8` dropped `NOT NULL` from
+`refund.provider_ref` *precisely* so many refused refunds — which never reached a provider and so
+have no reference — could coexist. Postgres allows that for free.
+
+Ported literally, that index permits **exactly one refused refund in the entire system** and
+rejects every one after it, and the failure arrives on the second refund a provider declines.
+The fix is a partial index on `providerRef: {$exists: true}`. Found by a test that was not
+looking for it.
+
+## A third correction
 
 **Collation is a win for comparisons and not for the title search.** Case- and accent-insensitive
 *equality* (email, city) folds inside the comparison and is indexable — genuinely better than

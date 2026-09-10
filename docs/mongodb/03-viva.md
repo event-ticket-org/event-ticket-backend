@@ -141,6 +141,12 @@ compiled perfectly and were invisible to the compiler.
 **"The 16MB document limit is the constraint on embedding."** Rarely. The real one is that the
 whole document is rewritten on update, and that it is the unit of contention.
 
+**"Unique constraints port straight across."** Plain ones do. But a `partialFilterExpression`
+**rejects `$ne`**, so a partial index written as a negation has to become an enumeration of every
+other value — correct today, quietly wrong the day a status is added. And a MongoDB unique index
+indexes a **missing field as null**, where Postgres treats NULLs as distinct: ported literally,
+`refund_provider_ref_unique` would have allowed exactly one refused refund in the entire system.
+
 ---
 
 ## If asked what you would do differently
@@ -159,7 +165,7 @@ Two honest answers:
 
 ## The state of the work, stated accurately
 
-**175 of 185 tests pass.** The 10 failures:
+**181 of 191 tests pass** (6 written for this migration). The 10 failures:
 
 - **4** — seat counts. The aggregation demonstrably returns the right values under the right id;
   something between it and the DTO drops them. Not diagnosed. Do not claim it is.
