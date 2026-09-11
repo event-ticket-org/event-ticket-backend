@@ -297,6 +297,15 @@ Be honest that it is a shorter list, and make the strongest point first:
 
 ## Traps: questions where the obvious answer is wrong
 
+**"Your design document says pricing tiers are embedded."** They are not, and admitting it is
+the better answer. `PricingTier` is its own collection, the design page claimed otherwise, and
+the claim was never checked against the code until an end-to-end run showed the published event's
+actual BSON. Applying the four questions honestly, embedding wins on all four — so the cost of
+the mismatch is real and nameable: one application-side join per listing that need not exist, and
+an `organizationId` on the tier that exists only because an RLS policy once needed something
+local to test. **The design reasoned correctly; the implementation ported a table because it was
+a table.** `01-document-model.md` now records that rather than hiding it.
+
 **"MongoDB is schemaless, so migration is easy."** The schema moved into the application, it did
 not disappear. Every rule Postgres enforced is now code that must be right everywhere, forever.
 
