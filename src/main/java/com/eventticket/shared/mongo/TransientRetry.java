@@ -48,15 +48,34 @@ import org.springframework.stereotype.Component;
  * constraint. The label is the driver's own, so this asks MongoDB whether the failure was
  * contention rather than inferring it from a message.
  *
- * <h2>Where it is applied</h2>
+ * <h2>Where it is applied, and how each site was found</h2>
  *
- * <p>{@code BeginCheckout} only, because that is the one flow with measured contention: many
- * buyers, the same seats, the same instant. {@code ConfirmPayment} also runs a multi-document
- * transaction and is deliberately left alone - a webhook touches one order and the seats that
- * order already holds, so two of them never contend for a document. {@code CancelEvent} writing
- * every seat of an event <em>can</em> collide with a checkout in flight, and would give that
- * buyer the same 500; it is rare enough that it has not been measured, and saying so is better
- * than quietly wrapping it and implying it was.
+ * <p>Three use cases, and the way each surfaced is the more useful half of the story:
+ *
+ * <ul>
+ *   <li>{@code BeginCheckout} - found by scripting <strong>six simultaneous buyers</strong>
+ *       against both running stacks. Eleven of twelve racing buyers had been getting a 500
+ *       where Postgres gave a 409 naming the seats.</li>
+ *   <li>{@code VerifyEmail} - found by running the application behind the <strong>real
+ *       frontend</strong>. React's development mode fires the effect twice, so two requests
+ *       arrived five milliseconds apart; one verified, the other returned a 500. This is the
+ *       happy path of every registration.</li>
+ *   <li>{@code ResetPassword} - found by <strong>looking for the shape</strong> once the first
+ *       two were understood, and confirmed with a test before anything was changed. Same
+ *       token-consumption pattern, same abort, same 500.</li>
+ * </ul>
+ *
+ * <p>Deliberately not applied to {@code ConfirmPayment}: a webhook touches one order and the
+ * seats that order already holds, so two of them never contend for a document, and the
+ * idempotency index already answers a redelivery. {@code CancelEvent} writing every seat of an
+ * event <em>can</em> collide with a checkout in flight; it is rare, it has not been measured,
+ * and saying so is better than wrapping it and implying it was.
+ *
+ * <p><strong>The general rule the three share:</strong> any transaction two callers can enter
+ * for the same document is a 500 waiting to happen, and it is invisible until something issues
+ * the requests at the same instant. A row lock made that case boring; an optimistic transaction
+ * makes it a defect.
+ *
  */
 @Component
 public class TransientRetry {

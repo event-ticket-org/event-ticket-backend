@@ -9,7 +9,7 @@ Measured against the same suite, running the same API, from the same commit.
 | Tests passing on MongoDB | **192 of 192** |
 | Of which, new tests written for this migration | 7 |
 | Predicted before starting | 113 free / 61 rework / 11 impossible |
-| Defects found *after* the suite was green, by running the system | **2** |
+| Defects found *after* the suite was green, by running the system | **4** |
 
 The migration is complete: the same API, the same contract, every test green.
 
@@ -126,6 +126,12 @@ WriteConflict (112)   errorLabels: ["TransientTransactionError"]
 The driver's contract is that the caller retries the whole transaction. Nothing did, so eleven
 of twelve racing buyers received `500 "The request could not be completed."` where Postgres had
 given eleven civil 409s. `TransientRetry` now restores the 409 by re-running the transaction.
+
+**And the seat hold was not the only site.** Running the application behind the real frontend
+found the same abort on `VerifyEmail` — React's development mode fires the effect twice, so two
+requests arrive about 5 ms apart, one verifies and the other returns a 500 **on the happy path of
+every registration**. Looking for the shape then found `ResetPassword` doing the same, confirmed
+by a test before anything was changed. Three sites, one cause.
 
 **Behaviour matches again. The cost profile does not.** Postgres queued each loser once;
 retrying makes them redo the entire unit of work — the Event, the seats, the pricing tiers —

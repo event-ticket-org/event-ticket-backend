@@ -21,8 +21,9 @@ comparison. Both builds were then run side by side and driven through the same j
 tenancy tests count a collection unfiltered and assert they see **every** tenant's rows. They
 pass by proving the guarantee is gone.
 
-*The second is what no test could reach.* Two real defects were found **after** the suite was
-green, by starting the application and looking at what it did:
+*The second is what no test could reach.* Four real defects were found **after** the suite was
+green — by starting the application, then by racing it, then by putting the real frontend in
+front of it:
 
 - The whole application was reading and writing MongoDB's default database, `test`, because
   Boot 4 removed the `spring.data.mongodb.*` connection properties and an unknown property is
@@ -32,10 +33,21 @@ green, by starting the application and looking at what it did:
   PostgreSQL had given them `409 SEATS_UNAVAILABLE`. A MongoDB transaction aborts on conflict
   instead of queueing, and nothing retried. The concurrency test counted anything that was not a
   201 as a refusal, so it never saw it.
+- **Every registration could 500.** With the real frontend in front of it, React's development
+  mode fires the verify-email effect twice; the two requests arrive ~5 ms apart, one verifies and
+  the other loses a write conflict. A hand-written test script is a well-behaved client and never
+  double-submits — the browser does.
+- **Password reset had the identical defect**, found by looking for the shape once the first two
+  were understood, and proven with a test before anything was changed.
 
-Both are fixed, and both are in `02-comparison.md` under *what a green suite does not prove*.
-They are the two most useful findings in the exercise: **a test that counts outcomes cannot see
-a change in what an outcome is.**
+All four are fixed, and they are in `02-comparison.md` under *what a green suite does not
+prove*. Two lessons come out of them, and they are the most useful things in the exercise:
+
+1. **A test that counts outcomes cannot see a change in what an outcome is.** One winner and
+   eleven losers was asserted, and delivered — with the eleven holding a 500.
+2. **Any transaction two callers can enter for the same document is a 500 waiting to happen.**
+   A row lock made that case boring; an optimistic transaction makes it a defect, and only two
+   genuinely simultaneous requests reveal it.
 
 ## The one-paragraph answer
 

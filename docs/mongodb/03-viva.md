@@ -208,6 +208,20 @@ same millisecond and race each other. **The 409 is back. The cost is not the sam
 queued each loser exactly once; retrying makes them redo the whole unit of work, and a retry
 storm arrives precisely at an on-sale spike.
 
+**It was not one use case, and that is the real answer to this question.** The same abort turned
+up in three places, each found a different way:
+
+| Use case | How it was found | What the user saw |
+|---|---|---|
+| `BeginCheckout` | six scripted simultaneous buyers | 500 instead of "those seats have gone" |
+| `VerifyEmail` | **running the real frontend** — React fires the effect twice, two requests 5 ms apart | 500 on the registration happy path |
+| `ResetPassword` | looking for the shape, then proving it with a test | 500 instead of "that link was already used" |
+
+So the general rule, which is what a teacher is actually asking for: **any transaction two
+callers can enter for the same document is a 500 waiting to happen.** Under a row lock that case
+was boring — the second caller waited and then read the truth. Under an optimistic transaction it
+is a defect, and nothing reveals it until two requests genuinely arrive at once.
+
 **And be ready for "why didn't a test catch it", because that is the real question.**
 `SeatHoldConcurrencyTest` said:
 
@@ -320,9 +334,23 @@ Two honest answers:
    wrong database the whole time. Then the journeys matched on all 40 steps, and running a
    *race* found eleven of twelve buyers holding a 500.
 
+   Then the races matched too, and running the **real frontend** found that every registration
+   had been able to 500, because React fires its effect twice and the second verify-email
+   request lost a write conflict.
+
    Each stage was a real check and each one was passed. **Every stage also missed something only
-   the next stage could see**, and they get progressively harder to fake: reading, then testing,
-   then running, then running under contention.
+   the next stage could see**, and they get progressively harder to fake:
+
+   | Stage | What it caught | What it could not see |
+   |---|---|---|
+   | Reading the code | the 96 compile errors | anything behavioural |
+   | The test suite | 3 defects that stopped everything | the wrong database; the losers' status |
+   | Running both stacks, same journey | nothing — 40 of 40 steps matched | anything needing two callers |
+   | Running them under contention | seat-hold 500s | anything only a real client does |
+   | Running the **real frontend** | verify-email 500s | — |
+
+   The last row is the one to make out loud: **a hand-written script is a well-behaved client**,
+   and well-behaved clients do not double-submit. The browser did.
 2. **Intercept at `MongoTemplate`, not at the repository.** Tenant filtering is enforced by
    convention plus a build-time test. The stronger design subclasses `MongoTemplate` so every
    query — including Spring Data's derived ones — passes through one choke point. It was not built

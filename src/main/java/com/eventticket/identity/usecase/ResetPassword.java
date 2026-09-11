@@ -9,12 +9,14 @@ import com.eventticket.identity.repository.RefreshTokenRepository;
 import com.eventticket.identity.security.SessionIssuer;
 import com.eventticket.shared.email.EmailSender;
 import com.eventticket.shared.error.ApiException;
+import com.eventticket.shared.mongo.TransientRetry;
 import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * requirements/001 criteria 18, 19 and 20.
@@ -48,20 +50,35 @@ public class ResetPassword {
     private final PasswordEncoder passwordEncoder;
     private final SessionIssuer sessions;
     private final EmailSender email;
+    private final TransientRetry retry;
+    private final TransactionTemplate transactions;
 
     public ResetPassword(AppUserRepository users, PasswordResetTokenRepository tokens,
                   RefreshTokenRepository refreshTokens, PasswordEncoder passwordEncoder,
-                  SessionIssuer sessions, EmailSender email) {
+                  SessionIssuer sessions, EmailSender email, TransientRetry retry,
+                  PlatformTransactionManager transactionManager) {
         this.users = users;
         this.tokens = tokens;
         this.refreshTokens = refreshTokens;
         this.passwordEncoder = passwordEncoder;
         this.sessions = sessions;
         this.email = email;
+        this.retry = retry;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * Retried for the same reason {@code VerifyEmail} is: one reset link opened twice at once -
+     * a double click, a prefetching mail client - made the loser's transaction abort with a
+     * MongoDB write conflict and answer 500, where a Postgres row lock made it wait and then
+     * report honestly that the link was already used. On the retry the token is spent, so
+     * {@code isUsable} produces that 410 by the ordinary rule.
+     */
     public Session reset(String rawToken, String newPassword) {
+        return retry.execute(() -> transactions.execute(status -> attempt(rawToken, newPassword)));
+    }
+
+    private Session attempt(String rawToken, String newPassword) {
         Instant now = Instant.now();
 
         PasswordResetToken token = tokens.findByToken(rawToken)
