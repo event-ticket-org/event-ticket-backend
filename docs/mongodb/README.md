@@ -4,7 +4,7 @@ The exercise, in three documents. Read them in order; each assumes the one befor
 
 | | |
 |---|---|
-| [`01-document-model.md`](01-document-model.md) | **The design.** The four-question rule for embedding, the full collection map, why `$lookup` is not a join. |
+| [`01-document-model.md`](01-document-model.md) | **The design.** The four-question rule for embedding, the full collection map, and what `$lookup` measurably is and is not. |
 | [`02-comparison.md`](02-comparison.md) | **What it cost and bought**, measured. Every claim has a number or a file behind it. |
 | [`03-viva.md`](03-viva.md) | **The questions, answered from this branch** — including four traps where the obvious answer is wrong. |
 

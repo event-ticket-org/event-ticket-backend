@@ -107,23 +107,79 @@ The trigger to revisit it is unchanged: if tiers ever become independently query
 event with a tier under 50,000 ₫" — question 1 flips and referencing becomes right for a reason
 rather than by inheritance.
 
-## Application-side joins, and why `$lookup` is not a join
+## Joining without embedding: `$lookup`, `$in`, and denormalisation
 
-Three ways to bring related documents together:
+An earlier version of this section was titled *"why `$lookup` is not a join"* and said it had
+"no cross-collection query planner", that it "executes per input document", and that it "belongs
+in reporting, not on a request path". **All three were wrong**, and measuring them on the
+MongoDB this project actually runs is what showed it.
 
-**1. Embed.** No join. The reason embedding is preferred where it fits.
+### What `$lookup` really does, measured
 
-**2. `$lookup` in an aggregation pipeline.** MongoDB's left outer join. Not a relational join:
-there is no foreign key, no cross-collection query planner, and it executes per input document.
-It is a tool for reporting, not for a request path.
+Server 8.0.30, against this system's own collections:
 
-**3. Application-side join.** Two queries: fetch the parents, collect the child ids, fetch them
-with one `$in`. Chattier on paper and usually *faster*, because you control the batching and
-nothing is executed per row.
+| Situation | Strategy the planner chose |
+|---|---|
+| `event → organization` on an indexed field | **`IndexedLoopJoin`** (uses the index) |
+| `event → ticket` on a field with no index | **`HashJoin`** |
 
-This codebase uses **(3)** wherever a join survives — for example the seats of an event, or the
-tickets of an order. One `$in` query per relationship, never one query per parent. Getting that
-wrong is the N+1 problem, and MongoDB gives you no query planner to hide it behind.
+So there *is* a planner and it *does* choose a join algorithm — the same two algorithms a
+relational engine picks between. And it streams rather than materialising: asking for a page out
+of 20,000 events where only 10% survive a post-join filter,
+
+| Page size | Documents examined |
+|---|---|
+| 21 | 448 |
+| 51 | 1,984 |
+| 101 | 4,032 |
+
+It stops as soon as the page is full. It does not scan the collection.
+
+**It also expresses the query this page used to claim was impossible.** The listing's
+`... and e.organization_id in (select o.id from organization where o.status = 'APPROVED')` is a
+`$lookup` followed by a `$match`, and suspending one organization drops exactly that
+organization's events from the result. Verified by planting the suspension and watching the count
+fall from 7 to 6 and back.
+
+### The differences that are real
+
+1. **The output is an array, not a row product.** `as: "org"` nests the matches in a field. This
+   is a genuine *advantage*: the money bug that needed a CTE in Postgres — summing across a join
+   multiplies every order by its seat count — cannot be written this way.
+2. **No referential integrity.** A dangling reference produces `[]`, and a later
+   `$match` on a field inside it silently drops the document. A data bug is then indistinguishable
+   from a business rule. A foreign key made the dangling case impossible in the first place.
+3. **Stage order is the author's problem.** `$limit` before the post-join `$match` returns short
+   pages and reports no error: asking for 21 returned **3**. There is no SQL equivalent of that
+   mistake, because a `WHERE` clause has no position to get wrong.
+4. **No join reordering across many collections.** A relational planner reorders an N-way join on
+   statistics. Irrelevant at two collections, real at five. Not this system's problem, and it
+   should not be claimed as one.
+5. **Tenancy, and this is the one that actually decided it here.** Under RLS, joining applied the
+   policy to *both* sides automatically. A `$lookup` reads the foreign collection **unfiltered**
+   unless its sub-pipeline says otherwise — and `TenantScopeTest`, which inspects repository
+   method signatures, cannot see inside a hand-assembled pipeline at all. Every `$lookup` is a
+   hole in the one mechanism that replaced row-level security.
+
+### So the three options, honestly
+
+**1. Embed.** No join at all. Preferred wherever the four questions allow it.
+
+**2. `$lookup`.** A real join, indexed, streaming, page-friendly. Reach for it when the
+relationship is genuinely a join and the tenancy is handled explicitly in the sub-pipeline.
+
+**3. Application-side join** — fetch the parents, collect the ids, fetch them with one `$in`.
+What this codebase uses, and **the reason is not performance**. It is that a `$in` batch is an
+ordinary repository method that the build-time tenancy test can see and check, where a pipeline
+is opaque to it. That is a statement about *this* system's missing RLS, not about `$lookup` being
+slow. One `$in` per relationship, never one query per parent — that is the N+1 problem, and here
+the planner genuinely cannot help, because the queries are issued from Java.
+
+**4. Denormalise**, which the earlier version failed to mention and which is the answer an
+experienced MongoDB developer gives first. `Event.titleFolded` already does it for search. Copying
+the organization's approval onto the event would remove the join entirely — paid for with a
+fan-out write whenever an organization is approved or suspended, and the risk of the copy going
+stale. *That* is the document-model trade, and it is the one worth arguing about.
 
 ## What no longer has a home
 

@@ -34,25 +34,61 @@ Four questions, in order. This is the whole framework and it fits on one hand.
 
 ## "What is `$lookup`? Is it a join?"
 
-It is MongoDB's left outer join, and it is **not** a relational join. No foreign key, no
-cross-collection query planner, and it executes per input document. It belongs in reporting, not
-on a request path.
+**Yes. It is a real join, and say so** — this is a trap question, and the confident wrong answer
+is the one most people give.
 
-The third option — and the one used here — is an **application-side join**: fetch the parents,
-collect the child ids, fetch them with one `$in`. Chattier on paper, usually faster, because you
-control the batching and nothing runs per row. One `$in` per relationship, never one query per
-parent; that is the N+1 problem, and MongoDB gives you no planner to hide it behind.
+An earlier draft of these notes said `$lookup` was "not a relational join", had "no
+cross-collection query planner", "executes per input document" and "belongs in reporting, not on
+a request path." Every part of that is false, and running it on the project's own MongoDB 8.0 is
+what proved it:
 
-**The example to cite** is the public listing. The SQL ended:
+| | |
+|---|---|
+| Joining on an indexed field | planner chose **`IndexedLoopJoin`** |
+| Joining on a field with no index | planner chose **`HashJoin`** |
+| One page of 21 out of 20,000, 90% filtered out after the join | **448 documents examined** — it streams and stops early |
+| Page of 51 / 101 | 1,984 / 4,032 — scales with the page, not the collection |
+
+Those are the same two algorithms a relational engine chooses between. If asked "so is it as good
+as a SQL join", the honest answer is *for a two-collection join on an indexed field, it is the
+same shape of thing*.
+
+**Then the part that separates a good answer from a memorised one — what is genuinely different:**
+
+1. **It returns an array, not a row product.** That is an *advantage*: the money bug that needed
+   a CTE in Postgres (summing across a join multiplies each order by its seat count) cannot be
+   written.
+2. **No referential integrity.** A dangling reference yields `[]` and a later `$match` drops the
+   document silently, so a data bug is indistinguishable from a business rule.
+3. **Stage order is yours to get right.** `$limit` before the post-join `$match` returns short
+   pages with no error — asking for 21 returned **3**. A `WHERE` clause has no position to get
+   wrong.
+4. **No N-way join reordering** on statistics. Irrelevant at two collections; do not inflate it.
+5. **Tenancy** — the one that actually decided it here. See below.
+
+**If asked "then why does this codebase use application-side joins?" — do not claim performance.**
+The real reason is that a `$in` batch is an ordinary repository method the build-time tenancy test
+can inspect, whereas a hand-assembled pipeline is opaque to it. Under RLS a join applied the policy
+to *both* sides automatically; a `$lookup` reads the foreign collection unfiltered unless its
+sub-pipeline says otherwise. **Every `$lookup` is a hole in the mechanism that replaced row-level
+security.** That is a fact about this system's missing RLS, not about `$lookup`.
+
+**And name the fourth option**, because it is what an experienced MongoDB developer reaches for
+first: **denormalise**. `Event.titleFolded` already does it for search. Copying the organization's
+approval status onto the event removes the join altogether, and is paid for with a fan-out write
+when an organization is suspended, plus the risk of the copy going stale. That is the document-model
+trade and it is the interesting argument.
+
+**The example to cite**, because it is where the draft was most wrong. The SQL ended:
 
 ```sql
 and e.organization_id in (select o.id from organization o where o.status = 'APPROVED')
 ```
 
-MongoDB cannot express that in a query at all. Doing it in application code costs three things:
-a second round trip; an **unbounded intermediate list** whose size the query author does not
-control; and **two snapshots** — an organization approved between the two calls is seen by one
-and not the other, where Postgres read both from one snapshot.
+The notes claimed *"MongoDB cannot express that in a query at all."* It expresses it exactly — a
+`$lookup` and a `$match` — and suspending one organization drops precisely that organization's
+events, verified by planting the suspension and watching the count fall from 7 to 6 and back.
+**If a teacher asks for one example of a claim you checked and had to withdraw, use this one.**
 
 ---
 
