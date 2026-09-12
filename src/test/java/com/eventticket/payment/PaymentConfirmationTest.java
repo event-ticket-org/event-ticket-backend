@@ -1,5 +1,6 @@
 package com.eventticket.payment;
 
+import org.springframework.data.mongodb.core.query.Criteria;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.Event;
@@ -113,8 +114,7 @@ class PaymentConfirmationTest extends ApiTest {
         deliverWebhook(deliveryId, providerRefOf(session), "PAID");
 
         assertThat(ticketsOf(buyer, order.getId())).hasSize(3);
-        assertThat(jdbc.queryForObject("select count(*) from ticket where order_id = ?",
-                Long.class, order.getId())).isEqualTo(3L);
+        assertThat(countIn("ticket", Criteria.where("orderId").is(order.getId()))).isEqualTo(3L);
     }
 
     @Test
@@ -140,9 +140,8 @@ class PaymentConfirmationTest extends ApiTest {
             }
         }
 
-        assertThat(jdbc.queryForObject("select count(*) from ticket where order_id = ?",
-                Long.class, order.getId())).isEqualTo(3L);
-        assertThat(jdbc.queryForObject("select count(*) from payment_event", Long.class)).isEqualTo(1L);
+        assertThat(countIn("ticket", Criteria.where("orderId").is(order.getId()))).isEqualTo(3L);
+        assertThat(countIn("paymentEvent")).isEqualTo(1L);
     }
 
     @Test
@@ -163,8 +162,7 @@ class PaymentConfirmationTest extends ApiTest {
 
         // The buyer took too long at the bank. The seats went back on sale, and somebody else
         // is already looking at them.
-        jdbc.update("update event_seat set held_until = now() - interval '1 minute' "
-                + "where held_by_order_id = ?", order.getId());
+        expireHoldsOf(order.getId());
 
         deliverWebhook(UUID.randomUUID().toString(), providerRefOf(session), "PAID");
 
@@ -173,11 +171,9 @@ class PaymentConfirmationTest extends ApiTest {
         assertThat(ticketsOf(buyer, order.getId())).isEmpty();
 
         // The money is ours and should not be. requirements/005 criterion 9.
-        assertThat(jdbc.queryForObject("select refund_required from ticket_order where id = ?",
-                Boolean.class, order.getId())).isTrue();
-        assertThat(jdbc.queryForObject(
-                "select count(*) from audit_entry where action = 'ORDER_REFUND_REQUIRED'",
-                Long.class)).isEqualTo(1L);
+        assertThat(readField("ticketOrder", order.getId(), "refundRequired", Boolean.class)).isTrue();
+        assertThat(countIn("auditEntry",
+                Criteria.where("action").is("ORDER_REFUND_REQUIRED"))).isEqualTo(1L);
 
         // The seats are free, not half-sold.
         assertThat(availabilityOf(eventId, seats.get(0))).isEqualTo(SeatAvailability.AVAILABLE);
@@ -190,8 +186,7 @@ class PaymentConfirmationTest extends ApiTest {
         TokenPair buyer = signUp("buyer@example.com");
         Order order = checkout(buyer, eventId, seatIdsOf(eventId, 1)).getBody();
 
-        jdbc.update("update ticket_order set hold_expires_at = now() - interval '1 minute' "
-                + "where id = ?", order.getId());
+        expireHoldsOf(order.getId());
 
         var refused = exchange(HttpMethod.POST, "/orders/" + order.getId() + "/payment-sessions",
                 buyer, new com.eventticket.api.model.StartPaymentRequest("FAKE"),

@@ -1,10 +1,7 @@
 package com.eventticket.payment.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -19,28 +16,21 @@ import java.util.UUID;
  * <p>Written last in the transaction, on purpose. If the work fails, this row is not committed
  * either, and the provider's retry is processed rather than mistaken for a duplicate.
  */
-@Entity
-@Table(name = "payment_event")
+@Document(collection = "paymentEvent")
 public class PaymentEvent {
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(nullable = false)
     private String provider;
 
-    @Column(name = "provider_event_id", nullable = false)
     private String providerEventId;
 
-    @Column(name = "session_id")
     private UUID sessionId;
 
     /** A delivery settles one flow or the other. Exactly one of these two is set. */
-    @Column(name = "refund_id")
     private UUID refundId;
 
-    @Column(name = "received_at", nullable = false)
     private Instant receivedAt = Instant.now();
 
     protected PaymentEvent() {}

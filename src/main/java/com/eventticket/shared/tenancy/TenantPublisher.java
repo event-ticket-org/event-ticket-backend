@@ -1,45 +1,32 @@
 package com.eventticket.shared.tenancy;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
 import java.util.UUID;
-import javax.sql.DataSource;
-import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.stereotype.Component;
 
 /**
- * Publishes the tenant into the database session of a transaction that has already begun.
+ * Adopts a tenant that the request could not carry: a use case establishing who the caller is
+ * as part of its own work - token refresh authenticates from a refresh token and only then
+ * knows the User - or one acting on an Organization from outside it, as platform approval does.
  *
- * <p>Normally {@link TenantAwareTransactionManager} does this once, at transaction start, and
- * nothing else needs to. The exception is a use case that establishes who the caller is as
- * part of its own work: token refresh authenticates from a refresh token and only then knows
- * the User, by which point the transaction is open and its tenant setting is empty. Setting
- * the ThreadLocal alone would not help - Postgres was told the tenant at begin, and the
- * policies read the database setting, not the JVM.
+ * <p><strong>This class used to have a reason to exist and now barely does, which is worth
+ * recording.</strong> Under Postgres, setting the ThreadLocal was not enough: the transaction
+ * had already begun and had already told the database an empty tenant, and the policies read
+ * the database setting rather than the JVM. So this opened the live connection and re-issued
+ * {@code set_config} against it.
  *
- * <p>Deliberately narrow. If this appears in an ordinary use case, the tenant should have
- * come from the access token instead, and that use case is doing authentication it has no
- * business doing.
+ * <p>Nothing reads a database setting now. The ThreadLocal <em>is</em> the tenant, because
+ * {@link TenantScope} composes its criteria from it at query time, so adopting one is an
+ * assignment. The whole hazard - a JVM and a database disagreeing about who the caller is -
+ * cannot arise when only one of them has an opinion.
+ *
+ * <p>Kept as a named component rather than inlined, because the narrowness was always the
+ * point: if this appears in an ordinary use case, the tenant should have come from the access
+ * token and that use case is doing authentication it has no business doing.
  */
 @Component
 public class TenantPublisher {
 
-    private final DataSource dataSource;
-
-    public TenantPublisher(DataSource dataSource) {
-        this.dataSource = dataSource;
-    }
-
     public void adopt(UUID userId, UUID organizationId) {
         TenantContext.set(userId, organizationId);
-        Connection connection = DataSourceUtils.getConnection(dataSource);
-        try (PreparedStatement statement = connection.prepareStatement(TenantSql.SET_TENANT)) {
-            statement.setString(1, TenantContext.organizationIdAsSetting());
-            statement.setString(2, TenantContext.userIdAsSetting());
-            statement.execute();
-        } catch (SQLException e) {
-            throw new IllegalStateException("Could not publish the tenant to the open transaction", e);
-        }
     }
 }

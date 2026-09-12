@@ -1,9 +1,7 @@
 package com.eventticket.identity.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.UUID;
 import com.eventticket.organization.domain.Membership;
@@ -14,24 +12,18 @@ import com.eventticket.organization.domain.Membership;
  * Role takes effect at refresh, because refresh re-reads authority from the database instead
  * of trusting the expiring token's claims.
  */
-@Entity
-@Table(name = "refresh_token")
+@Document(collection = "refreshToken")
 public class RefreshTokenRecord {
 
     @Id
-    @Column(name = "token_hash")
     private String tokenHash;
 
-    @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    @Column(name = "active_organization_id")
     private UUID activeOrganizationId;
 
-    @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
-    @Column(name = "revoked_at")
     private Instant revokedAt;
 
     protected RefreshTokenRecord() {}

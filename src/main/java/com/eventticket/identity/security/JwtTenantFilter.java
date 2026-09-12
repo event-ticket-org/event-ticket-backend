@@ -14,11 +14,14 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-import com.eventticket.shared.tenancy.TenantAwareTransactionManager;
 
 /**
  * Copies the authenticated identity out of the access token into {@link TenantContext}, from
- * where {@code TenantAwareTransactionManager} publishes it to Postgres for every transaction.
+ * where {@code TenantScope} composes it into each query that needs narrowing.
+ *
+ * <p>It used to be published to Postgres once per transaction, and the database enforced it
+ * from there. Nothing enforces it now except the queries themselves, so this filter went from
+ * feeding a mechanism to feeding a convention.
  *
  * <p>The context is cleared in a finally block without exception. Threads are pooled, and a
  * tenant left behind on one would be handed to the next request that borrowed the thread -

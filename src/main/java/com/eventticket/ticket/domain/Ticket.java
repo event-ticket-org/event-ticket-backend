@@ -1,12 +1,7 @@
 package com.eventticket.ticket.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -22,61 +17,44 @@ import java.util.UUID;
  * leaked database is not a set of working tickets. Reissuing replaces the lookup, and the
  * previous code stops resolving to anything at all.
  */
-@Entity
-@Table(name = "ticket")
+@Document(collection = "ticket")
 public class Ticket {
 
     public enum Status { VALID, REDEEMED, VOID }
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "buyer_user_id", nullable = false)
     private UUID buyerUserId;
 
-    @Column(name = "order_id", nullable = false)
     private UUID orderId;
 
-    @Column(name = "event_id", nullable = false)
     private UUID eventId;
 
-    @Column(name = "event_seat_id", nullable = false)
     private UUID eventSeatId;
 
-    @Column(name = "seat_label", nullable = false)
     private String seatLabel;
 
-    @Column(name = "tier_name", nullable = false)
     private String tierName;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Status status = Status.VALID;
 
-    @Column(name = "code_lookup", nullable = false)
     private String codeLookup;
 
-    @Column(name = "code_version", nullable = false)
     private short codeVersion;
 
-    @Column(name = "issued_at", nullable = false)
     private Instant issuedAt = Instant.now();
 
-    @Column(name = "redeemed_at")
     private Instant redeemedAt;
 
     /**
      * requirements/007 criterion 5. The device matters as much as the instant: together they
      * are how staff tell "you already went in" from "somebody else used your ticket".
      */
-    @Column(name = "redeemed_by_user_id")
     private UUID redeemedByUserId;
 
-    @Column(name = "redeemed_device_id")
     private String redeemedDeviceId;
 
     protected Ticket() {}

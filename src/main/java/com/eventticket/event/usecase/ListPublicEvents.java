@@ -60,20 +60,21 @@ public class ListPublicEvents {
         Instant before = PageCursor.orEndOfTime(startsBefore);
         String title = titlePattern(query);
 
-        List<Event> found;
-        if (city == null || city.isBlank()) {
-            found = events.findPublicPage(now, Event.Status.PUBLISHED,
-                    Organization.Status.APPROVED, after, before, title,
-                    from.at(), from.id(), page);
-        } else {
-            List<UUID> venueIds = venues.findIdsByCity(city);
-            // An "in ()" with nothing in it is not a query worth sending, and on some engines
-            // not valid SQL either.
-            found = venueIds.isEmpty() ? List.of()
-                    : events.findPublicPageAtVenues(now, Event.Status.PUBLISHED,
-                            Organization.Status.APPROVED, venueIds, after, before, title,
-                            from.at(), from.id(), page);
+        // One method where there were two. The city variant was the same query with one extra
+        // `in`, duplicated only because the two were separate JPQL strings; criteria composed
+        // in Java can simply omit the clause, so a null `venueIds` means "every venue".
+        List<UUID> venueIds = null;
+        if (city != null && !city.isBlank()) {
+            venueIds = venues.findIdsByCity(city);
+            // An "in ()" with nothing in it is not a query worth sending.
+            if (venueIds.isEmpty()) {
+                return Paged.lastPage(List.of());
+            }
         }
+
+        List<Event> found = events.findPublicPage(now, Event.Status.PUBLISHED,
+                Organization.Status.APPROVED, venueIds, after, before, title,
+                from.at(), from.id(), limit + 1);
 
         boolean more = found.size() > limit;
         List<Event> visible = more ? found.subList(0, limit) : found;
@@ -121,14 +122,18 @@ public class ListPublicEvents {
      * normalizer strips combining marks and would leave Đ alone, so "dem" would find "Đêm" in
      * Postgres and not in a unit test, or the reverse. One folding, in one place.
      */
+    /**
+     * The search term, or null for "everything".
+     *
+     * <p>It used to return a SQL LIKE pattern - {@code %term%} with {@code \}, {@code %} and
+     * {@code _} escaped - and an absent search was {@code %}, which matched everything and so
+     * needed no branch. Neither idea survives: LIKE has no meaning here, and criteria built in
+     * Java omit a clause rather than widening it. The escaping moved too, to
+     * {@code Pattern.quote} at the point the regex is built, which is the right place for it -
+     * the wildcards in what a visitor typed are the pattern's syntax and not theirs, and a
+     * search for "50%" that returned the whole listing reads as a broken filter.
+     */
     private static String titlePattern(String query) {
-        if (query == null || query.isBlank()) {
-            return "%";
-        }
-        String escaped = query.strip()
-                .replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
-        return "%" + escaped + "%";
+        return query == null || query.isBlank() ? null : query.strip();
     }
 }

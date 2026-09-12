@@ -61,7 +61,7 @@ public class RegisterUser {
             // Invited before they registered (criterion 8). The Membership an Owner created
             // is already attached to this row and becomes usable once the email is verified.
             existing.setPassword(displayName, passwordEncoder.encode(password));
-            user = existing;
+            user = users.save(existing);
             log.info("Invited user completed registration userId={}", user.id());
         } else {
             user = users.save(new AppUser(emailAddress, displayName, passwordEncoder.encode(password)));
@@ -72,6 +72,7 @@ public class RegisterUser {
         // registers like anybody else and arrives already able to approve Organizations.
         if (platformAdmins.includes(user.email())) {
             user.promoteToPlatformAdmin();
+            users.save(user);
             log.info("Registered account is a configured platform admin userId={}", user.id());
         }
 

@@ -5,11 +5,11 @@ import com.eventticket.identity.security.SecureTokens;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
-import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.mongodb.repository.Update;
 
-public interface PasswordResetTokenRepository extends JpaRepository<PasswordResetToken, String> {
+public interface PasswordResetTokenRepository extends MongoRepository<PasswordResetToken, String> {
 
     /** Callers hold the raw token; only its hash is stored. */
     public default Optional<PasswordResetToken> findByToken(String rawToken) {
@@ -21,8 +21,7 @@ public interface PasswordResetTokenRepository extends JpaRepository<PasswordRese
      * working leaves a record that it was superseded rather than vanishing - which is the
      * difference between answering "that link is spent" and "that link never existed".
      */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("update PasswordResetToken t set t.consumedAt = :now "
-            + "where t.userId = :userId and t.consumedAt is null")
+    @Query("{ 'userId': ?0, 'consumedAt': null }")
+    @Update("{ '$set': { 'consumedAt': ?1 } }")
     public void consumeAllFor(UUID userId, Instant now);
 }

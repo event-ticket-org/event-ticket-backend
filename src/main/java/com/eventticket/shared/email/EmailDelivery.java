@@ -1,12 +1,7 @@
 package com.eventticket.shared.email;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
@@ -22,8 +17,7 @@ import java.util.UUID;
  * <p>Not tenant-scoped. Half of these are sent before anyone has an Organization at all -
  * email verification is the first thing that happens to a new account.
  */
-@Entity
-@Table(name = "email_delivery")
+@Document(collection = "emailDelivery")
 public class EmailDelivery {
 
     public enum Status { PENDING, SENT, FAILED }
@@ -33,35 +27,24 @@ public class EmailDelivery {
     private static final Duration FIRST_BACKOFF = Duration.ofMinutes(1);
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(nullable = false)
     private String recipient;
 
-    @Column(nullable = false)
     private String subject;
 
-    @Column(nullable = false)
     private String body;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Status status = Status.PENDING;
 
-    @Column(nullable = false)
     private int attempts;
 
-    @Column(name = "last_error")
     private String lastError;
 
-    @Column(name = "next_attempt_at", nullable = false)
     private Instant nextAttemptAt = Instant.now();
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
-    @Column(name = "sent_at")
     private Instant sentAt;
 
     protected EmailDelivery() {}

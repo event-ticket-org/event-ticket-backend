@@ -1,16 +1,14 @@
 package com.eventticket.checkout.domain;
 
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.money.Money;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -22,37 +20,27 @@ import java.util.UUID;
  * else. Two records of one fact, deliberately: the seat's is authoritative for availability
  * and the Order's is what a human is looking at.
  */
-@Entity
-@Table(name = "ticket_order")
+@Document(collection = "ticketOrder")
 public class Order {
 
     public enum Status { AWAITING_PAYMENT, PAID, EXPIRED, CANCELLED, REFUNDED }
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "event_id", nullable = false)
     private UUID eventId;
 
     /** A User, not a Member. Buyers are almost never members of the Organization they buy from. */
-    @Column(name = "buyer_user_id", nullable = false)
     private UUID buyerUserId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Status status = Status.AWAITING_PAYMENT;
 
-    @Column(name = "total_amount", nullable = false)
     private long totalAmount;
 
-    @Column(nullable = false)
     private String currency = Money.Currency.VND.name();
 
-    @Column(name = "hold_expires_at")
     private Instant holdExpiresAt;
 
     /**
@@ -63,14 +51,19 @@ public class Order {
      * <p>requirements/008 is what finally acts on it. Until then nothing read this column,
      * which is a state the platform could reach and not leave.
      */
-    @Column(name = "refund_required", nullable = false)
     private boolean refundRequired;
 
-    @Column(name = "paid_at")
     private Instant paidAt;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
+
+    /**
+     * The seats, embedded (see {@link OrderSeat}). Kept sorted by label, which is what
+     * {@code findByOrderIdOrderByLabelAsc} used to ask the database for - eight seats is small
+     * enough that sorting once on write beats sorting on every read, and the database can no
+     * longer be asked to sort a nested array on the way out.
+     */
+    private List<OrderSeat> seats = new ArrayList<>();
 
     protected Order() {}
 
@@ -85,6 +78,22 @@ public class Order {
 
     public UUID id() {
         return id;
+    }
+
+    public List<OrderSeat> seats() {
+        return List.copyOf(seats);
+    }
+
+    /**
+     * Set once, when the Order is created and its seats have just been held.
+     *
+     * <p>Deliberately not {@code addSeat}. An Order's seats are decided in a single act at
+     * checkout and never afterwards, and a method that appended would invite a second write to
+     * a document whose whole justification for being one document is that it is written once.
+     */
+    public void holdSeats(List<OrderSeat> chosen) {
+        this.seats = new ArrayList<>(chosen);
+        this.seats.sort(Comparator.comparing(OrderSeat::label));
     }
 
     public UUID organizationId() {

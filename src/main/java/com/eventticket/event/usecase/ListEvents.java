@@ -4,6 +4,7 @@ import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventDetail;
 import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PricingTier;
+import com.eventticket.event.repository.EventCounts;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.PricingTierRepository;
 import com.eventticket.organization.domain.Managers;
@@ -62,7 +63,7 @@ public class ListEvents {
         // One more than asked for: if it comes back, there is another page, and that is
         // cheaper than counting the whole table to find out.
         List<Event> page = events.findPage(TenantContext.requireOrganizationId(), statuses,
-                from.at(), from.id(), PageRequest.ofSize(limit + 1));
+                from.at(), from.id(), limit + 1);
 
         boolean more = page.size() > limit;
         List<Event> visible = more ? page.subList(0, limit) : page;
@@ -78,10 +79,10 @@ public class ListEvents {
                 .findByIdIn(visible.stream().filter(e -> !e.isPublished()).map(Event::venueId).distinct().toList())
                 .stream().collect(Collectors.toMap(Venue::id, Venue::seatMap));
 
-        Map<UUID, EventRepository.EventCounts> countsByEvent = events
+        Map<UUID, EventCounts> countsByEvent = events
                 .countsFor(visible.stream().map(Event::id).toList())
                 .stream().collect(Collectors.toMap(
-                        EventRepository.EventCounts::getEventId, Function.identity()));
+                        EventCounts::getEventId, Function.identity()));
 
         List<EventDetail> items = visible.stream()
                 .map(event -> {

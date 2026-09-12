@@ -18,7 +18,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The single admission endpoint (knowledge base requirements/007).
@@ -55,7 +54,31 @@ public class ScanTicket {
         this.rateLimiter = rateLimiter;
     }
 
-    @Transactional
+    /**
+     * <strong>Deliberately not {@code @Transactional}, and it used to be.</strong>
+     *
+     * <p>Under Postgres the transaction was free and correct. The conditional {@code UPDATE}
+     * took a row lock, three simultaneous losers blocked on it, and each woke to find a status
+     * that was no longer VALID and answered ALREADY_REDEEMED. One winner, three civil refusals.
+     *
+     * <p>Wrapping the same update in a MongoDB transaction turns that into
+     * {@code WriteConflict: Write conflict during plan execution ... errorLabels:
+     * [TransientTransactionError]}, and the three losers get a 500 instead of an answer. MongoDB
+     * transactions are optimistic: a conflict aborts rather than queues, and the driver expects
+     * the caller to retry the whole thing. At a gate with four scanners on one code, that is a
+     * retry storm in place of a queue.
+     *
+     * <p>The fix is not to retry. It is that <strong>this never needed a transaction</strong> -
+     * the redemption is one conditional update to one document, which MongoDB makes atomic on
+     * its own, with no replica set and no lock hint. The transaction was carrying nothing here
+     * and cost everything.
+     *
+     * <p>One thing genuinely weakens. The Scan row and the Ticket update were atomic together
+     * and are not any more, so a process that dies between them leaves a redemption with no
+     * audit row. The Scan collection is append-only evidence rather than state anything reads
+     * back, and requirements/007 wants every attempt recorded rather than every attempt
+     * recorded transactionally - but it is a real loss and not a free one.
+     */
     public ScanResult scan(UUID eventId, String ticketCode, String deviceId) {
         // Before anything is read. A code an attacker generates costs them nothing, and this
         // is what keeps it from costing us a database round trip and a row.
@@ -95,7 +118,11 @@ public class ScanTicket {
         // The MAC is checked before any lookup, so a forged or mistyped code never reaches the
         // database. That is most of requirements/007 criterion 10's 500 ms budget protected
         // from the one input an attacker controls entirely.
-        Optional<Ticket> found = codes.lookupIn(ticketCode).flatMap(tickets::findByCodeLookup);
+        // Narrowed to this Event's Organization. The policy used to do it; see the repository
+        // for what happens when nothing does.
+        Optional<Ticket> found = codes.lookupIn(ticketCode)
+                .flatMap(lookup -> tickets.findByCodeLookupAndOrganizationId(
+                        lookup, event.organizationId()));
         if (found.isEmpty()) {
             return new Decision(ScanResult.refused(ScanOutcome.UNKNOWN_CODE,
                     "That code is not a ticket for anything."), null);

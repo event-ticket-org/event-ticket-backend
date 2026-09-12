@@ -4,7 +4,6 @@ import com.eventticket.checkout.domain.Order;
 import com.eventticket.checkout.domain.OrderDetail;
 import com.eventticket.checkout.domain.OrderSeat;
 import com.eventticket.checkout.repository.OrderRepository;
-import com.eventticket.checkout.repository.OrderSeatRepository;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventSeat;
 import com.eventticket.event.domain.PricingTier;
@@ -16,6 +15,7 @@ import com.eventticket.shared.UserDirectory;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.money.Money;
+import com.eventticket.shared.mongo.TransientRetry;
 import com.eventticket.shared.tenancy.TenantContext;
 import java.time.Duration;
 import java.time.Instant;
@@ -28,7 +28,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * requirements/004. Selection is free and optimistic; this is where the commitment and the
@@ -41,6 +42,19 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>A refusal names the seats (criterion 6) so the client can keep the rest of the
  * selection. Failing with "some seats are gone" would make a buyer start over for one row.
+ *
+ * <h2>The transaction is a template and not an annotation, and that is the migration talking</h2>
+ *
+ * <p>Under Postgres this was {@code @Transactional} and nothing more, because the database
+ * queued contention: the losers blocked on a row lock and woke up to a 409. A MongoDB
+ * transaction aborts instead of waiting, so the same race handed eleven of twelve buyers a 500.
+ *
+ * <p>The retry has to sit <em>outside</em> the transaction, and an annotation cannot be
+ * arranged that way from inside one class - a self-call does not pass through the proxy. So the
+ * transaction becomes an explicit {@link TransactionTemplate}, wrapped by
+ * {@link TransientRetry}, which reads in the order it actually happens: retry the transaction,
+ * do not retransact the retry. {@code CancelEvent} already uses a template for its own reasons,
+ * so this is not a new idiom in this codebase.
  */
 @Component
 public class BeginCheckout {
@@ -48,30 +62,40 @@ public class BeginCheckout {
     private static final Logger log = LoggerFactory.getLogger(BeginCheckout.class);
 
     private final OrderRepository orders;
-    private final OrderSeatRepository orderSeats;
     private final EventRepository events;
     private final EventSeatRepository seats;
     private final PricingTierRepository tiers;
     private final EventSeatAvailability availability;
     private final UserDirectory users;
     private final Duration holdWindow;
+    private final TransientRetry retry;
+    private final TransactionTemplate transactions;
 
-    public BeginCheckout(OrderRepository orders, OrderSeatRepository orderSeats,
-                  EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
+    public BeginCheckout(OrderRepository orders, EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
                   EventSeatAvailability availability, UserDirectory users,
-                  @Value("${app.checkout.hold-window:PT10M}") Duration holdWindow) {
+                  @Value("${app.checkout.hold-window:PT10M}") Duration holdWindow,
+                  TransientRetry retry, PlatformTransactionManager transactionManager) {
         this.orders = orders;
-        this.orderSeats = orderSeats;
         this.events = events;
         this.seats = seats;
         this.tiers = tiers;
         this.availability = availability;
         this.users = users;
         this.holdWindow = holdWindow;
+        this.retry = retry;
+        this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Transactional
+    /**
+     * The transaction, and a second go at it if MongoDB aborted the first for contention rather
+     * than for a reason. Every retry starts from scratch on purpose: the abort rolled the Order
+     * back too, so re-reading is not waste, it is the only way to see who actually won.
+     */
     public OrderDetail begin(UUID eventId, List<UUID> seatIds) {
+        return retry.execute(() -> transactions.execute(status -> attempt(eventId, seatIds)));
+    }
+
+    private OrderDetail attempt(UUID eventId, List<UUID> seatIds) {
         UUID userId = TenantContext.requireUserId();
         requireVerifiedEmail(userId);
 
@@ -91,10 +115,16 @@ public class BeginCheckout {
         // is no half-made order to clean up later.
         //
         // saveAndFlush, not save. The hold is taken by a SQL function through JdbcTemplate,
-        // which shares the transaction but not the persistence context, so an INSERT that JPA
-        // is still holding back is a row the database cannot see - and the hold's foreign key
-        // to it fails.
-        Order order = orders.saveAndFlush(new Order(event.organizationId(), eventId, userId,
+        // `saveAndFlush` here, because `hold_seats` was raw SQL sharing the transaction but
+        // not the persistence context: an INSERT JPA was still holding back was a row the
+        // database could not see, and the hold's foreign key to it failed.
+        //
+        // Both halves of that are gone. There is no persistence context to hold anything back,
+        // so a save is a write; and there is no foreign key from a seat to an order, so nothing
+        // would have checked. A save is enough - and note the second reason is not a
+        // simplification: the constraint that made the ordering matter simply is not enforced
+        // any more.
+        Order order = orders.save(new Order(event.organizationId(), eventId, userId,
                 totalOf(chosen, prices), expiresAt));
 
         List<UUID> held = availability.hold(eventId, seatIds, order.id(), expiresAt);
@@ -102,15 +132,16 @@ public class BeginCheckout {
             refuseNaming(seatIds, held, chosen, eventId);
         }
 
-        orderSeats.saveAll(chosen.stream()
-                .map(seat -> new OrderSeat(event.organizationId(), userId, order.id(), seat.id(),
-                        seat.label(), seat.tierName(), prices.get(seat.tierName())))
+        order.holdSeats(chosen.stream()
+                .map(seat -> new OrderSeat(seat.id(), seat.label(), seat.tierName(),
+                        prices.get(seat.tierName())))
                 .toList());
+        orders.save(order);
 
         log.info("Began checkout orderId={} eventId={} seats={} total={}",
                 order.id(), eventId, held.size(), order.total().amount());
 
-        return new OrderDetail(order, event.title(), orderSeats.findByOrderIdOrderByLabelAsc(order.id()));
+        return new OrderDetail(order, event.title(), order.seats());
     }
 
     /**

@@ -1,12 +1,7 @@
 package com.eventticket.admission.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -18,35 +13,25 @@ import java.util.UUID;
  * situation this row exists to explain afterwards, and it is the only trace of a code being
  * tried repeatedly by someone who should not have it.
  */
-@Entity
-@Table(name = "scan")
+@Document(collection = "scan")
 public class Scan {
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "event_id", nullable = false)
     private UUID eventId;
 
     /** Null when the code resolved to nothing. The attempt is still recorded. */
-    @Column(name = "ticket_id")
     private UUID ticketId;
 
-    @Column(name = "scanned_by_user_id", nullable = false)
     private UUID scannedByUserId;
 
-    @Column(name = "device_id", nullable = false)
     private String deviceId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private ScanOutcome outcome;
 
-    @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt = Instant.now();
 
     protected Scan() {}

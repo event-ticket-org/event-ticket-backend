@@ -62,7 +62,14 @@ public class RefreshSession {
                             "That session has expired. Sign in again.");
                 });
 
+        // Explicit saves, because there is no dirty checking here.
+        //
+        // Under JPA a loaded entity is managed: mutating it was enough, and the flush at commit
+        // wrote the change. MongoDB has no persistence context and no managed state, so an
+        // object loaded, mutated and not saved is an object that was never changed. Nothing
+        // warns, nothing fails, and the transaction commits successfully having done nothing.
         record.revoke(now);
+        refreshTokens.save(record);
 
         AppUser user = users.findOrThrow(record.userId());
         return sessions.issueFor(user, stillAMemberOf(record.activeOrganizationId(), user.id()));

@@ -1,5 +1,6 @@
 package com.eventticket.ticket;
 
+import org.springframework.data.mongodb.core.query.Criteria;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.Event;
@@ -70,8 +71,8 @@ class TicketDeliveryTest extends ApiTest {
 
         // nfr.md: a leaked database is not a set of working tickets. Nothing in the row is the
         // code - the stored lookup is a strict prefix component, and the MAC is not there at all.
-        List<String> stored = jdbc.queryForList(
-                "select code_lookup from ticket where order_id = ?", String.class, paid.getId());
+        List<String> stored = readFields("ticket",
+                Criteria.where("orderId").is(paid.getId()), "codeLookup", String.class, null);
         assertThat(stored).noneMatch(lookup ->
                 tickets.stream().anyMatch(ticket -> ticket.getTicketCode().equals(lookup)));
         assertThat(tickets).allSatisfy(ticket ->
@@ -139,21 +140,16 @@ class TicketDeliveryTest extends ApiTest {
 
         // The buyer heard nothing yet, but the message is owed rather than lost.
         assertThat(email.to("buyer@example.com")).isEmpty();
-        assertThat(jdbc.queryForObject(
-                "select status from email_delivery where subject like 'Your tickets%'",
-                String.class)).isEqualTo("PENDING");
-        assertThat(jdbc.queryForObject(
-                "select last_error from email_delivery where subject like 'Your tickets%'",
-                String.class)).contains("bad day");
+        assertThat(ticketEmailField("status")).isEqualTo("PENDING");
+        assertThat(ticketEmailField("lastError")).contains("bad day");
 
         // The retry, which the scheduler would run, delivers it.
-        jdbc.update("update email_delivery set next_attempt_at = now() - interval '1 minute'");
+        setField("emailDelivery", new Criteria(), "nextAttemptAt",
+                java.time.Instant.now().minusSeconds(60));
         dispatcher.dispatchDue();
 
         assertThat(email.to("buyer@example.com")).hasSize(1);
-        assertThat(jdbc.queryForObject(
-                "select status from email_delivery where subject like 'Your tickets%'",
-                String.class)).isEqualTo("SENT");
+        assertThat(ticketEmailField("status")).isEqualTo("SENT");
         assertThat(paid.getId()).isNotNull();
     }
 
@@ -182,5 +178,17 @@ class TicketDeliveryTest extends ApiTest {
         priceTier(manager, event.getId(), "Standard", 250_000);
         publish(manager, event.getId(), Event.class);
         return event.getId();
+    }
+
+    /**
+     * {@code subject like 'Your tickets%'} as a regex anchored at the start.
+     *
+     * <p>Anchoring is not cosmetic. An anchored regex can use an index; a leading-wildcard one
+     * cannot, exactly as in SQL - so the distinction between {@code like 'x%'} and
+     * {@code like '%x%'} survives the migration, it just stops being visible in the syntax.
+     */
+    private String ticketEmailField(String field) {
+        return readFieldWhere("emailDelivery",
+                Criteria.where("subject").regex("^Your tickets"), field, String.class);
     }
 }

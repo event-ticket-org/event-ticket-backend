@@ -3,9 +3,9 @@ package com.eventticket.admission.repository;
 import com.eventticket.admission.domain.Scan;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.mongodb.repository.MongoRepository;
 
-public interface ScanRepository extends JpaRepository<Scan, UUID> {
+public interface ScanRepository extends MongoRepository<Scan, UUID> {
 
     public List<Scan> findByEventIdOrderByOccurredAtDesc(UUID eventId);
 

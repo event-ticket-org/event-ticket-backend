@@ -1,5 +1,6 @@
 package com.eventticket.checkout;
 
+import org.springframework.data.mongodb.core.query.Criteria;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.Error;
@@ -142,8 +143,7 @@ class RefundsAndCancellationTest extends ApiTest {
         assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(refused.getBody().getCode()).isEqualTo(ErrorCode.ORDER_NOT_REFUNDABLE);
         assertThat(refused.getBody().getMessage()).contains("already with the payment provider");
-        assertThat(jdbc.queryForObject("select count(*) from refund where order_id = ?",
-                Long.class, order.getId())).isEqualTo(1L);
+        assertThat(countIn("refund", Criteria.where("orderId").is(order.getId()))).isEqualTo(1L);
 
         // And once it has settled, the refusal changes its words rather than staying stale.
         deliverRefundWebhook(refundRefOf(first), "REFUNDED");
@@ -219,8 +219,7 @@ class RefundsAndCancellationTest extends ApiTest {
         PaymentSession session = startPayment(buyer, order.getId());
 
         // The seats lapse, and only then does the money arrive: requirements/005 criterion 9.
-        jdbc.update("update event_seat set held_until = now() - interval '1 minute' "
-                + "where held_by_order_id = ?", order.getId());
+        expireHoldsOf(order.getId());
         deliverWebhook(UUID.randomUUID().toString(), providerRefOf(session), "PAID");
 
         Order flagged = orderOf(buyer, order.getId());
@@ -247,8 +246,7 @@ class RefundsAndCancellationTest extends ApiTest {
 
         Order late = checkout(unlucky, organizer.eventId(), seatIdsOf(organizer.eventId(), 1)).getBody();
         PaymentSession session = startPayment(unlucky, late.getId());
-        jdbc.update("update event_seat set held_until = now() - interval '1 minute' "
-                + "where held_by_order_id = ?", late.getId());
+        expireHoldsOf(late.getId());
         deliverWebhook(UUID.randomUUID().toString(), providerRefOf(session), "PAID");
 
         // criterion 10: both Orders, then only the one holding money it should not.
@@ -325,8 +323,7 @@ class RefundsAndCancellationTest extends ApiTest {
 
         assertThat(started.getOrders()).hasSize(2);
         // The refundable one was still attempted: one failure did not roll the other back.
-        assertThat(jdbc.queryForObject("select count(*) from refund where order_id = ?",
-                Long.class, refundable.getId())).isEqualTo(1L);
+        assertThat(countIn("refund", Criteria.where("orderId").is(refundable.getId()))).isEqualTo(1L);
 
         // criterion 7, and the part that is easy to get wrong: the refused Order is *reported*
         // as failed, with the reason, rather than left looking like one still in progress.
@@ -371,7 +368,7 @@ class RefundsAndCancellationTest extends ApiTest {
         cancel(organizer, "And then the venue flooded.");
 
         // criterion 9, and KB invariant 23.
-        assertThat(jdbc.queryForList("select action from audit_entry", String.class))
+        assertThat(readFields("auditEntry", "action", String.class))
                 .contains("ORDER_REFUND_STARTED", "ORDER_REFUNDED", "EVENT_CANCELLED");
     }
 
@@ -527,8 +524,7 @@ class RefundsAndCancellationTest extends ApiTest {
 
     /** The provider's handle for a reversal, which its callback names. */
     private String refundRefOf(Refund refund) {
-        return jdbc.queryForObject("select provider_ref from refund where id = ?",
-                String.class, refund.getId());
+        return readField("refund", refund.getId(), "providerRef", String.class);
     }
 
     /**
@@ -617,7 +613,8 @@ class RefundsAndCancellationTest extends ApiTest {
 
     /** Settles every refund the system has started, the way a provider eventually would. */
     private void settleEveryRefund() {
-        jdbc.queryForList("select provider_ref from refund where status = 'REFUND_PENDING'",
-                String.class).forEach(ref -> deliverRefundWebhook(ref, "REFUNDED"));
+        readFields("refund", Criteria.where("status").is("REFUND_PENDING"),
+                "providerRef", String.class, null)
+                .forEach(ref -> deliverRefundWebhook(ref, "REFUNDED"));
     }
 }

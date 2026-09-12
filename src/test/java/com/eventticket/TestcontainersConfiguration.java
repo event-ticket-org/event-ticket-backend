@@ -6,7 +6,7 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.MinIOContainer;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.testcontainers.mongodb.MongoDBContainer;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -20,10 +20,26 @@ public class TestcontainersConfiguration {
 
 	static final String BUCKET = "event-ticket-covers";
 
+	/**
+	 * A replica set of one, which is not a preference and not a production shape - it is the
+	 * only way to get transactions at all. A standalone {@code mongod} refuses them outright,
+	 * because MongoDB implements them on top of the oplog and a standalone has none.
+	 *
+	 * <p><strong>{@code withReplicaSet()} is not optional and is easy to miss.</strong>
+	 * Testcontainers 1.x initiated a replica set by default; 2.x made it opt-in, so without
+	 * this call the container is a standalone {@code mongod} and every transaction fails with
+	 * {@code IllegalOperation: Transaction numbers are only allowed on a replica set member}.
+	 *
+	 * <p>The way it fails is the part worth remembering. The application context started
+	 * cleanly and the smoke test passed - the failures were logged and swallowed, because
+	 * nothing in this codebase asks whether the datastore can do transactions until something
+	 * tries one. The equivalent Postgres container needed no such thing: a single Postgres has
+	 * been able to begin a transaction since before replication existed.
+	 */
 	@Bean
 	@ServiceConnection
-	public PostgreSQLContainer postgresContainer() {
-		return new PostgreSQLContainer(DockerImageName.parse("postgres:latest"));
+	public MongoDBContainer mongoContainer() {
+		return new MongoDBContainer(DockerImageName.parse("mongo:8.0")).withReplicaSet();
 	}
 
 	/**

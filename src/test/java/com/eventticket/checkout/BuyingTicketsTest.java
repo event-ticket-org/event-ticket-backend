@@ -165,10 +165,7 @@ class BuyingTicketsTest extends ApiTest {
 
     /** Moves an Order's holds into the past, as ten minutes of a buyer's indecision would. */
     private void lapseHolds(UUID orderId) {
-        jdbc.update("update event_seat set held_until = now() - interval '1 minute' "
-                + "where held_by_order_id = ?", orderId);
-        jdbc.update("update ticket_order set hold_expires_at = now() - interval '1 minute' "
-                + "where id = ?", orderId);
+        expireHoldsOf(orderId);
     }
 
     private SeatAvailability availabilityOf(UUID eventId, UUID seatId) {

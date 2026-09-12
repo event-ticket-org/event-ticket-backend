@@ -3,7 +3,6 @@ package com.eventticket.checkout.usecase;
 import com.eventticket.checkout.domain.Order;
 import com.eventticket.checkout.domain.OrderDetail;
 import com.eventticket.checkout.repository.OrderRepository;
-import com.eventticket.checkout.repository.OrderSeatRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.shared.tenancy.TenantContext;
 import java.util.UUID;
@@ -19,12 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class GetOrder {
 
     private final OrderRepository orders;
-    private final OrderSeatRepository orderSeats;
     private final EventRepository events;
 
-    public GetOrder(OrderRepository orders, OrderSeatRepository orderSeats, EventRepository events) {
+    public GetOrder(OrderRepository orders, EventRepository events) {
         this.orders = orders;
-        this.orderSeats = orderSeats;
         this.events = events;
     }
 
@@ -33,7 +30,8 @@ public class GetOrder {
         Order order = orders.findOrThrow(orderId)
                 .requireBuyerOrOrganization(TenantContext.requireUserId(), TenantContext.organizationId());
 
-        return new OrderDetail(order, events.findOrThrow(order.eventId()).title(),
-                orderSeats.findByOrderIdOrderByLabelAsc(orderId));
+        // The seats arrived with the Order. The second query this used to make is not
+        // optimised away - it no longer exists, which is what embedding buys.
+        return new OrderDetail(order, events.findOrThrow(order.eventId()).title(), order.seats());
     }
 }

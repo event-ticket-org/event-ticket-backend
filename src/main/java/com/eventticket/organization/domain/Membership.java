@@ -1,12 +1,7 @@
 package com.eventticket.organization.domain;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.Id;
-import jakarta.persistence.Table;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -14,8 +9,7 @@ import java.util.UUID;
  * The link between a person and an Organization, carrying exactly one Role. A person may
  * hold memberships in several Organizations (knowledge base invariant 2).
  */
-@Entity
-@Table(name = "membership")
+@Document(collection = "membership")
 public class Membership {
 
     /**
@@ -26,20 +20,14 @@ public class Membership {
     public enum Role { OWNER, MANAGER, GATE_STAFF }
 
     @Id
-    @GeneratedValue
-    private UUID id;
+    private UUID id = UUID.randomUUID();
 
-    @Column(name = "organization_id", nullable = false)
     private UUID organizationId;
 
-    @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Role role;
 
-    @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
     protected Membership() {}

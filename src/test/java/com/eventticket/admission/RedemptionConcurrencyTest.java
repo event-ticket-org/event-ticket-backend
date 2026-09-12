@@ -1,5 +1,6 @@
 package com.eventticket.admission;
 
+import org.springframework.data.mongodb.core.query.Criteria;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.eventticket.api.model.Event;
@@ -61,13 +62,10 @@ class RedemptionConcurrencyTest extends ApiTest {
                 .filteredOn(ScanOutcome.ALREADY_REDEEMED::equals).hasSize(DEVICES - 1);
 
         // The database agrees, and every attempt is on the record whatever it was.
-        assertThat(jdbc.queryForObject(
-                "select count(*) from ticket where code_lookup = ? and status = 'REDEEMED'",
-                Long.class, door.code().split("-")[1])).isEqualTo(1L);
-        assertThat(jdbc.queryForObject("select count(*) from scan", Long.class))
-                .isEqualTo((long) DEVICES);
-        assertThat(jdbc.queryForObject(
-                "select count(*) from scan where outcome = 'ADMITTED'", Long.class)).isEqualTo(1L);
+        assertThat(countIn("ticket", Criteria.where("codeLookup").is(door.code().split("-")[1])
+                .and("status").is("REDEEMED"))).isEqualTo(1L);
+        assertThat(countIn("scan")).isEqualTo((long) DEVICES);
+        assertThat(countIn("scan", Criteria.where("outcome").is("ADMITTED"))).isEqualTo(1L);
     }
 
     @Test
