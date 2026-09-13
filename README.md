@@ -69,7 +69,7 @@ defaults and a container without them refuses to boot. That is deliberate - see
 [CLAUDE.md](CLAUDE.md#no-credential-has-a-default).
 
 [event-ticket-deploy](https://github.com/event-ticket-org/event-ticket-deploy) runs this
-alongside the frontend, Postgres and MinIO with one origin in front of both halves.
+alongside the frontend, Postgres and the object store with one origin in front of both halves.
 
 ## How the code is organised
 

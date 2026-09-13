@@ -11,7 +11,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * <ul>
  *   <li>{@code endpoint} is how <em>this application</em> reaches the store: empty for AWS
- *       itself, MinIO locally, and in a container a name only the container network resolves.
+ *       itself, SeaweedFS locally, and in a container a name only the container network
+ *       resolves.
  *   <li>{@code publicBaseUrl} is where <em>a browser fetches</em> a cover. It may be a CDN,
  *       which can serve a picture and cannot accept one.
  *   <li>{@code uploadBaseUrl} is where <em>a browser POSTs</em> one, so it has to be the

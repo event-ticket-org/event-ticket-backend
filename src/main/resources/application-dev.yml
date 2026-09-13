@@ -23,7 +23,7 @@ app:
   security:
     jwt-secret: dev-only-secret-not-for-any-deployed-environment-0123456789
   storage:
-    # The compose.yaml MinIO root credentials.
+    # The identity in docker/storage/s3-identities.json, which compose.yaml mounts.
     access-key: eventticket
     secret-key: eventticket
   tickets:

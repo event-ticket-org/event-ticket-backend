@@ -167,7 +167,7 @@ presigned PUT would have been less code and a worse guarantee: it has no equival
 `content-length-range`, so the size ceiling would live in a number the client tells us rather
 than in a condition the store enforces. Code that computes a signature is either exactly right
 or completely broken and reading it proves neither - `CoverImageUploadTest` performs real
-uploads against a real MinIO, and that is what says it works.
+uploads against a real object store, and that is what says it works.
 
 **Uploading directly moves the validation, it does not remove it.** We choose the key, so a
 caller can only write inside their own Event; the signed conditions cap the size; and the file's
@@ -215,16 +215,36 @@ it is also the tenancy: both ids come from a request that has already been check
 id is pattern-checked before it is concatenated into a path, or `../` would address the rest of
 the bucket.
 
-**`mc anonymous set download` grants `ListBucket` as well as `GetObject`.** It is the obvious
-command and it makes the bucket enumerable - and the keys carry organization and event ids, so a
-listable bucket publishes which organizations exist and how many events each has, drafts and
-unlisted ones included. `compose.yaml` sets an explicit policy with the one action serving a
-picture needs; the test container does the same.
+**Public read must grant `GetObject` and never `ListBucket`.** The keys carry organization and
+event ids, so an enumerable bucket publishes which organizations exist and how many events each
+has, drafts and unlisted ones included. The obvious command for it was MinIO's
+`mc anonymous set download`, which grants both; SeaweedFS spells the narrow version
+`Read:event-ticket-covers` on the anonymous identity, where Read is genuinely not List. Either
+way the grant is asserted rather than assumed: anonymous GET of a cover answers 200 and anonymous
+list of the same bucket answers 403.
+
+**The store is SeaweedFS, and it replaced MinIO because MinIO stopped being available.** The
+community edition was archived in April 2026 and its Docker Hub repository withdrawn, so every
+`minio/minio` tag became unpullable at once - the pinned release included, which is the part
+worth remembering. Pinning a version protects you from a bad upgrade and not at all from a
+publisher leaving, and CI had been green for weeks on locally cached images while a fresh clone
+could not have run at all. `quay.io/minio/minio` still serves the old tags, but an archive is not
+a channel.
 
 **A multipart POST must have a known content length.** `HttpRequest.BodyPublishers.ofByteArrays`
-reports its length as unknown, so the JDK client sends the form chunked, and MinIO answers a
+reports its length as unknown, so the JDK client sends the form chunked, and MinIO answered a
 chunked POST with `EmptyRequestBody` - which reads like a bug in the body you built and is not.
-Concatenate and use `ofByteArray`.
+Concatenate and use `ofByteArray`. SeaweedFS accepts chunked, so nothing here fails any more if
+you get it wrong: the rule stands because the next store may not, and the test no longer catches
+it.
+
+**A store is only evidence while it is still refusing somebody.** SeaweedFS rejects every request
+until an identity file says otherwise, so a file that fails to mount produces a store that
+accepts everything - and fifteen upload tests that pass while proving nothing, the same shape as
+a tenancy test run through a tenant-filtered query. `TestcontainersConfiguration` therefore makes
+an unsigned write and fails the suite if it succeeds. That check was itself wrong first time
+round: it ran before the bucket existed, so a 404 satisfied it. Planting the failure is what
+found that, and it is the only reason the check is attached to anything.
 
 ## No credential has a default
 
