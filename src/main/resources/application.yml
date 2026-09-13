@@ -8,6 +8,15 @@ spring:
     # value lives in application-dev.yml and nowhere else, so an application started without
     # the environment variable refuses to boot instead of quietly using a published one.
     password: ${DATABASE_PASSWORD}
+  task:
+    scheduling:
+      pool:
+        # Two, because Boot's default is one and the replica freshness poller runs every 200ms.
+        # Sharing a single thread with DispatchPendingEmails and ExpireLapsedOrders - both on a
+        # one-minute delay - would let either of them block the poller, and a poller that has not
+        # run recently reports the replica as stale and sends every read to the primary. The
+        # feature would degrade quietly rather than break loudly.
+        size: 2
   jpa:
     open-in-view: false          # no lazy loading in the web layer; use cases own their transactions
     hibernate:
@@ -45,6 +54,25 @@ server:
     # The contract's paths are relative to /api/v1, and the generated interfaces map the
     # paths as written. Setting it here keeps the two in step.
     context-path: /api/v1
+
+# Read routing is configured by APP_DATASOURCE_REPLICA_URL in the environment, and is
+# deliberately NOT declared here.
+#
+# Absence is the switch. With no replica configured, not one bean in shared/persistence exists,
+# Boot autoconfigures its usual single DataSource, and the application behaves exactly as it did
+# before read routing was written - which is the path a fresh clone and the whole test suite take.
+#
+# Writing it as `url: ${DATABASE_REPLICA_URL:}` was the first attempt and is wrong:
+# @ConditionalOnProperty treats a declared-but-empty value as present, so the feature would
+# switch itself on with a blank URL. An undeclared key is genuinely absent, and Spring's relaxed
+# binding still picks the environment variable up when it is set.
+#
+#   APP_DATASOURCE_REPLICA_URL=jdbc:postgresql://localhost:5001/eventticket
+#
+# That address is HAProxy's replica port, not a standby's own - so a promotion does not need this
+# value changed. No credentials of its own either: a streaming standby is a byte-for-byte copy of
+# the primary, so its roles and passwords are the same ones.
+# See docs/replication/02-this-project.md.
 
 app:
   # Where a browser reaches this application. Every link this system emails is built from it -
