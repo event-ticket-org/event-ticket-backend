@@ -185,6 +185,31 @@ services:
       timeout: 3s
       retries: 20
 
+  # ------------------------------------------------------------------------------------------
+  # One address for writes and one for reads, neither of which is a hostname.
+  # ------------------------------------------------------------------------------------------
+  haproxy:
+    build: ./docker/replication/haproxy
+    container_name: pg-haproxy
+    ports:
+      # 5100 and 5101 on the host, 5000 and 5001 inside. The offset is not arbitrary: macOS
+      # binds port 5000 to the AirPlay Receiver in Control Center, so publishing HAProxy there
+      # produces a listener that accepts the connection and is not a database. The application
+      # hangs in `HikariPool-1 - Starting...` with no error on either side, which is a long way
+      # from the actual cause.
+      - "5100:5000"   # writes - whichever node answers pg_is_in_recovery() = false
+      - "5101:5001"   # reads  - the standby
+    volumes:
+      - ./docker/replication/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    environment:
+      # The health check needs to log in to ask a question. It reads one row from one function
+      # and touches no application data, so the ordinary application account is enough.
+      CHECK_USER: eventticket
+      CHECK_PASSWORD: eventticket
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+
 volumes:
   primary-data:
   standby1-data:

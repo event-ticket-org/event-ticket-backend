@@ -13,6 +13,7 @@ run at the same time; `docker compose up -d` still does what it always did.
 |---|---|
 | [`01-what-went-wrong.md`](01-what-went-wrong.md) | **Every failure, measured.** Eight things that broke, what each looked like from outside, and what to monitor so it does not surprise you twice. |
 | [`02-this-project.md`](02-this-project.md) | **What this application would have to solve** to use a replica: which of its 18 read-only use cases could tolerate lag, and which are read-your-own-writes. |
+| [`03-read-routing.md`](03-read-routing.md) | **Doing it.** HAProxy in front, an LSN guard behind, and the routing bug that made every query go to the primary while looking perfect. |
 
 ---
 

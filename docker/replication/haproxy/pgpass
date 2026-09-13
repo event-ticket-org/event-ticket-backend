@@ -1,0 +1,12 @@
+# Credentials for the health check, in the format libpq expects:
+#   hostname:port:database:username:password
+#
+# A file rather than an environment variable, and that is forced rather than chosen. HAProxy runs
+# external-check commands with a sanitised environment - only its own HAPROXY_* variables survive
+# - so anything set in compose.yaml simply is not there:
+#
+#   /usr/local/bin/check-role.sh: line 22: CHECK_PASSWORD: parameter not set
+#
+# The value is the same published development credential as everywhere else in this cluster, and
+# is safe for exactly the same reason: it can only ever be used locally.
+*:*:postgres:eventticket:eventticket

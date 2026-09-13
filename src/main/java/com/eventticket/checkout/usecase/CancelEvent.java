@@ -2,6 +2,7 @@ package com.eventticket.checkout.usecase;
 
 import com.eventticket.checkout.domain.EventCancellation;
 import com.eventticket.checkout.domain.Order;
+import com.eventticket.shared.persistence.PrimaryOnly;
 import com.eventticket.checkout.repository.OrderRepository;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.repository.EventRepository;
@@ -76,6 +77,7 @@ public class CancelEvent {
     private final EmailSender email;
     private final UserDirectory users;
     private final TransactionTemplate transactions;
+    private final TransactionTemplate readOnlyTransactions;
 
     public CancelEvent(EventRepository events, OrderRepository orders, TicketRepository tickets,
                 RefundRepository refunds, RefundOrder refundOrder, Managers managers,
@@ -91,6 +93,8 @@ public class CancelEvent {
         this.email = email;
         this.users = users;
         this.transactions = new TransactionTemplate(transactionManager);
+        this.readOnlyTransactions = new TransactionTemplate(transactionManager);
+        this.readOnlyTransactions.setReadOnly(true);
     }
 
     public EventCancellation cancel(UUID eventId, String reason) {
@@ -198,9 +202,29 @@ public class CancelEvent {
     /**
      * What the caller polls (criterion 7): every Order the cancellation had to give money back
      * for, and what became of each attempt.
+     *
+     * <h2>The one read in this application pinned to the primary</h2>
+     *
+     * <p>Read routing normally needs no help: a read is sent to a replica only once that replica
+     * has replayed past the caller's own last write, so somebody who has just changed something
+     * always sees it. This method is the exception, and the reason is in the word "polls".
+     *
+     * <p>What it reports is written by the cancellation <em>as it proceeds</em> - refund after
+     * refund, seconds after the manager triggered it. The log position recorded when they
+     * pressed the button says nothing about refunds written since, so they would qualify for the
+     * replica and watch progress appear to stop. The guard protects your own writes; this reads
+     * the system's.
+     *
+     * <p>Hence {@link PrimaryOnly}, and hence a {@link TransactionTemplate} rather than the
+     * {@code @Transactional} this used to carry: the routing decision is made when the
+     * transaction takes its connection, which is before any code in a method body runs. Wrapping
+     * the call from outside would have put a persistence concern in the controller.
      */
-    @Transactional(readOnly = true)
     public EventCancellation progress(UUID eventId) {
+        return PrimaryOnly.run(() -> readOnlyTransactions.execute(status -> reportProgress(eventId)));
+    }
+
+    private EventCancellation reportProgress(UUID eventId) {
         UUID organizationId = TenantContext.requireOrganizationId();
         managers.requireCallerCanManageEvents(organizationId);
 
