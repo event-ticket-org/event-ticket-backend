@@ -47,6 +47,9 @@ class CoverImageUploadTest extends ApiTest {
     @Value("${app.storage.upload-base-url}")
     private String browserFacingStore;
 
+    @Value("${app.storage.bucket}")
+    private String storageBucket;
+
     @Test
     @DisplayName("an image is uploaded straight to storage and becomes the event's cover")
     void aCoverIsUploadedAndAdopted() {
@@ -107,6 +110,43 @@ class CoverImageUploadTest extends ApiTest {
 
         assertThat(page.getCoverImageUrl()).isNotNull();
         assertThat(page.getCoverImageAlt()).isEqualTo("A crowd at dusk");
+    }
+
+    /**
+     * The public page hands a browser a URL and nothing else - no credentials, no session - so
+     * the store has to serve that one object to a complete stranger, and must not serve them the
+     * list it belongs to. Both halves are asserted because granting them is a single setting and
+     * the obvious way to write it grants more than this: MinIO's `mc anonymous set download` gave
+     * away ListBucket along with GetObject, and the keys carry organization and event ids, so an
+     * enumerable bucket publishes which organizations exist and how many events each has.
+     *
+     * <p>Nothing else here ever fetches a cover, so without this the grant is only configuration
+     * that nobody reads back.
+     */
+    @Test
+    @DisplayName("a stranger can fetch the cover and cannot list the bucket it is in")
+    void theCoverIsPubliclyReadableAndTheBucketIsNot() throws Exception {
+        TokenPair manager = approvedManager();
+        Event event = publishedEvent(manager);
+        CoverUpload upload = beginUpload(manager, event.getId()).getBody();
+        uploadTo(upload, png(), "cover.png");
+        confirm(manager, event.getId(), upload.getUploadId(), "A crowd at dusk");
+
+        URI coverUrl = exchange(HttpMethod.GET, "/public/events/" + event.getId(), null, null,
+                PublicEvent.class).getBody().getCoverImageUrl();
+
+        HttpResponse<byte[]> fetched = DIRECT.send(
+                HttpRequest.newBuilder(coverUrl).build(),
+                HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(fetched.statusCode()).isEqualTo(200);
+        assertThat(fetched.body()).isNotEmpty();
+
+        // The bucket the cover lives in, asked for its contents by the same anonymous caller.
+        URI bucket = coverUrl.resolve("/" + storageBucket + "?list-type=2");
+        assertThat(DIRECT.send(HttpRequest.newBuilder(bucket).build(),
+                HttpResponse.BodyHandlers.discarding()).statusCode())
+                .as("an anonymous caller must not be able to enumerate the bucket")
+                .isBetween(400, 499);
     }
 
     /**
