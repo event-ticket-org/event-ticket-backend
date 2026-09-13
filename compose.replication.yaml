@@ -1,0 +1,191 @@
+# A three-node PostgreSQL cluster: one primary, two streaming standbys.
+#
+#   docker compose -f compose.replication.yaml up -d
+#   docker compose -f compose.replication.yaml down -v      # -v or the next run reuses the data
+#
+# Deliberately separate from compose.yaml. The everyday development stack is one Postgres and
+# should stay that way: the test suite starts its own containers through Testcontainers, and a
+# clone of this repository must keep working with `docker compose up -d` and nothing else. This
+# file is opened on purpose, by somebody who wants a cluster.
+#
+# The ports are 5433/5434/5435 so the ordinary dev database on 5432 can run at the same time.
+#
+# ---------------------------------------------------------------------------------------------
+# What three nodes does and does not buy you, because the number is misleading
+# ---------------------------------------------------------------------------------------------
+#
+# In MongoDB an odd node count matters because a replica set *elects* its primary by majority.
+# Postgres has no election and no consensus. If the primary here dies, nothing is promoted,
+# nobody votes, and the cluster simply stops accepting writes until a person intervenes.
+# `docs/replication/` and the promotion drill make that concrete.
+#
+# What the third node buys is **quorum commit**: `synchronous_standby_names = 'ANY 1 (...)'`
+# lets the primary confirm a commit once *either* standby has the WAL. With a single
+# synchronous standby, that standby going away freezes the primary - replication that makes
+# availability worse rather than better, which is the trap this file is arranged to demonstrate.
+#
+# Automatic failover needs Patroni or repmgr on top of this. That is a deliberate omission, not
+# an oversight.
+
+name: event-ticket-replication
+
+x-postgres-common: &postgres-common
+  image: postgres:18
+  environment: &postgres-env
+    POSTGRES_DB: eventticket
+    POSTGRES_USER: eventticket
+    POSTGRES_PASSWORD: eventticket
+    # Pinned for the same reason compose.yaml pins it: Postgres 18 moved the default data
+    # directory, and a named volume mounted where the server does not write is a cluster that
+    # silently does not persist.
+    PGDATA: /var/lib/postgresql/data
+    REPLICATION_USER: replicator
+    REPLICATION_PASSWORD: replicator-not-for-any-deployment
+
+services:
+  # ------------------------------------------------------------------------------------------
+  # The primary. The only node that accepts writes.
+  # ------------------------------------------------------------------------------------------
+  pg-primary:
+    <<: *postgres-common
+    container_name: pg-primary
+    ports:
+      - "5433:5432"
+    volumes:
+      - primary-data:/var/lib/postgresql/data
+      - ./docker/replication/primary-init.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro
+    command:
+      - postgres
+      # replica is the default in modern Postgres and is stated anyway, because it is the
+      # setting that decides whether the WAL contains enough to rebuild a whole server.
+      # `minimal` is faster and cannot feed a standby at all.
+      - -c
+      - wal_level=replica
+      # One sender per standby, plus headroom for a pg_basebackup running at the same time.
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      # Lets a standby serve read-only queries while it replays. Without it a standby is a warm
+      # spare that answers nothing, which is a legitimate choice and not the one being made here.
+      - -c
+      - hot_standby=on
+      # hot_standby_feedback is NOT set here, and an earlier version of this file set it here
+      # and was wrong twice over.
+      #
+      # First, it is a *standby* setting: it controls whether a standby tells the primary which
+      # rows it still needs. On the primary it parses, shows up in SHOW, and does nothing at
+      # all - a setting that looks configured and is inert. `SHOW hot_standby_feedback` said
+      # `on` here and `off` on both standbys, which is the only way to catch it.
+      #
+      # Second, the comment claimed it made replication lag visible. It does not. It decides
+      # whether a long query on a standby gets killed by
+      #     ERROR: canceling statement due to conflict with recovery
+      # when the primary vacuums rows that query is still reading. See the standby services.
+      # Required by pg_rewind. Phase 5 promotes a standby and then has to decide what to do
+      # with the old primary, and without this the only answer is "clone it again from scratch".
+      - -c
+      - wal_log_hints=on
+      # synchronous_standby_names is deliberately NOT set here, and that is the point rather
+      # than an omission. Its default is empty, which is asynchronous replication - what most
+      # production systems run and where this cluster starts.
+      #
+      # Setting it as a `-c` flag would make it impossible to change at runtime: command-line
+      # options outrank postgresql.auto.conf, so `ALTER SYSTEM SET synchronous_standby_names`
+      # followed by a reload appears to succeed, and `SHOW synchronous_standby_names` still
+      # returns the command-line value. The precedence is
+      #     command line  >  postgresql.auto.conf (ALTER SYSTEM)  >  postgresql.conf
+      # and it costs an afternoon the first time it is met, because nothing reports a conflict.
+      #
+      # Anything meant to be changed while the cluster runs belongs in ALTER SYSTEM, not here.
+      - -c
+      - log_line_prefix=%m [%p] %q%u@%d
+    healthcheck:
+      # -d as well as -U: pg_isready reports "accepting connections" for a server with no such
+      # role and no such database, which makes a green healthcheck mean very little.
+      test: ["CMD-SHELL", "pg_isready -U eventticket -d eventticket"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ------------------------------------------------------------------------------------------
+  # Two standbys. Read-only, continuously replaying the primary's WAL.
+  # ------------------------------------------------------------------------------------------
+  pg-standby-1:
+    <<: *postgres-common
+    container_name: pg-standby-1
+    ports:
+      - "5434:5432"
+    environment:
+      <<: *postgres-env
+      PRIMARY_HOST: pg-primary
+      REPLICATION_SLOT: standby1
+    volumes:
+      - standby1-data:/var/lib/postgresql/data
+      - ./docker/replication/standby-entrypoint.sh:/replication/entrypoint.sh:ro
+    entrypoint: ["/bin/bash", "/replication/entrypoint.sh"]
+    # hot_standby_feedback belongs here, on the standby, and it is the single knob that decides
+    # whether this node can serve long-running reads.
+    #
+    #   off (the default): the primary vacuums whatever it likes, and a read here that is still
+    #       looking at a removed row is killed mid-query - "canceling statement due to conflict
+    #       with recovery". Measured: a 25-second report died after about 2 seconds.
+    #   on:  this standby tells the primary which row versions it still needs, and the primary
+    #       keeps them. The same report completed - and the primary was left holding 21,431
+    #       dead tuples it could not clean up.
+    #
+    # So it trades a standby that cancels queries for a primary that bloats, and the bloat is
+    # unbounded in the length of the longest query running here. Left `on` because a standby
+    # that randomly kills reads is not one you can route traffic to; a deployment pairs it with
+    # a statement_timeout so one forgotten query cannot bloat the primary indefinitely.
+    command: ["postgres", "-c", "hot_standby_feedback=on"]
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventticket -d eventticket"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pg-standby-2:
+    <<: *postgres-common
+    container_name: pg-standby-2
+    ports:
+      - "5435:5432"
+    environment:
+      <<: *postgres-env
+      PRIMARY_HOST: pg-primary
+      REPLICATION_SLOT: standby2
+    volumes:
+      - standby2-data:/var/lib/postgresql/data
+      - ./docker/replication/standby-entrypoint.sh:/replication/entrypoint.sh:ro
+    entrypoint: ["/bin/bash", "/replication/entrypoint.sh"]
+    # hot_standby_feedback belongs here, on the standby, and it is the single knob that decides
+    # whether this node can serve long-running reads.
+    #
+    #   off (the default): the primary vacuums whatever it likes, and a read here that is still
+    #       looking at a removed row is killed mid-query - "canceling statement due to conflict
+    #       with recovery". Measured: a 25-second report died after about 2 seconds.
+    #   on:  this standby tells the primary which row versions it still needs, and the primary
+    #       keeps them. The same report completed - and the primary was left holding 21,431
+    #       dead tuples it could not clean up.
+    #
+    # So it trades a standby that cancels queries for a primary that bloats, and the bloat is
+    # unbounded in the length of the longest query running here. Left `on` because a standby
+    # that randomly kills reads is not one you can route traffic to; a deployment pairs it with
+    # a statement_timeout so one forgotten query cannot bloat the primary indefinitely.
+    command: ["postgres", "-c", "hot_standby_feedback=on"]
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventticket -d eventticket"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  primary-data:
+  standby1-data:
+  standby2-data:
