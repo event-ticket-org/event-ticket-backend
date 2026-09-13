@@ -108,7 +108,7 @@
 		<!--
 			Object storage for Event cover images (ADR-0006). The SDK, not a Spring starter:
 			one bucket, four operations, and a starter would bring an auto-configuration whose
-			opinions we would then have to override for MinIO.
+			opinions we would then have to override for a store that is not AWS.
 		-->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
@@ -161,11 +161,6 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers-junit-jupiter</artifactId>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.testcontainers</groupId>
-			<artifactId>testcontainers-minio</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>

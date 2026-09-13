@@ -88,7 +88,7 @@ app:
     # which is the common case and what a personal Gmail account requires anyway.
     from: ${MAIL_FROM:}
   storage:
-    # Object storage for cover images (ADR-0006). Locally this is the MinIO container in
+    # Object storage for cover images (ADR-0006). Locally this is the SeaweedFS container in
     # compose.yaml; deployed, the endpoint is left empty and the SDK resolves AWS itself.
     endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
     region: ${STORAGE_REGION:ap-southeast-1}

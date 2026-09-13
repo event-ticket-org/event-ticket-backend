@@ -29,9 +29,9 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * The one implementation of {@link ObjectStore}, against anything that speaks S3 - AWS
- * deployed, MinIO in {@code compose.yaml} and in the tests.
+ * deployed, SeaweedFS in {@code compose.yaml} and in the tests.
  *
- * <p>Path-style addressing, because virtual-host style needs DNS for every bucket and MinIO on
+ * <p>Path-style addressing, because virtual-host style needs DNS for every bucket and a store on
  * localhost has none.
  */
 @Component

@@ -1,0 +1,13 @@
+{
+  "identities": [
+    {
+      "name": "app",
+      "credentials": [{ "accessKey": "eventticket", "secretKey": "eventticket" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    },
+    {
+      "name": "anonymous",
+      "actions": ["Read:event-ticket-covers"]
+    }
+  ]
+}

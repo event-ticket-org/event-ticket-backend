@@ -10,7 +10,8 @@ COPY mvnw pom.xml ./
 COPY contracts/ contracts/
 COPY src/ src/
 
-# No tests. They run against real Postgres and real MinIO through Testcontainers, so running
+# No tests. They run against a real Postgres and a real object store through Testcontainers,
+# so running
 # them here would mean a Docker daemon inside a Docker build; CI runs the suite on every pull
 # request, which is the right place for a failing test to stop things.
 #
