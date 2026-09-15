@@ -14,6 +14,8 @@ run at the same time; `docker compose up -d` still does what it always did.
 | [`01-what-went-wrong.md`](01-what-went-wrong.md) | **Every failure, measured.** Eight things that broke, what each looked like from outside, and what to monitor so it does not surprise you twice. |
 | [`02-this-project.md`](02-this-project.md) | **What this application would have to solve** to use a replica: which of its 18 read-only use cases could tolerate lag, and which are read-your-own-writes. |
 | [`03-read-routing.md`](03-read-routing.md) | **Doing it.** HAProxy in front, an LSN guard behind, and the routing bug that made every query go to the primary while looking perfect. |
+| [`04-running-it-for-real.md`](04-running-it-for-real.md) | **Operating it.** The same ideas applied to a deployment with real orders in it: adding replication to a live primary without restarting it, why the database left its container, why not Patroni, and the backup that had been failing for two days while everything looked green. |
+| [`05-pooling-and-logical-replication.md`](05-pooling-and-logical-replication.md) | **Two things this cluster does not use**, and the conditions that would change that. Why a transaction pooler is safe here by luck earned from ADR-0002, and why logical replication is an upgrade tool rather than a standby. |
 
 ---
 
@@ -60,6 +62,11 @@ synchronous standby ties every commit on the system to that one node's latency, 
 **Automatic failover needs Patroni or repmgr on top of this.** That is a deliberate omission
 here, not an oversight, and it is the single biggest gap between this cluster and a
 production one.
+
+On a single machine it should stay omitted, and
+[`04-running-it-for-real.md`](04-running-it-for-real.md) argues why: Patroni would add a
+coordination service that demotes a healthy primary when it cannot reach it, to guard against a
+failure that barely exists when every node shares one disk.
 
 ---
 
