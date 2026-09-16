@@ -2,7 +2,9 @@ package com.eventticket.venue.usecase;
 
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.tenancy.TenantContext;
+import com.eventticket.venue.domain.City;
 import com.eventticket.venue.domain.Venue;
+import com.eventticket.venue.domain.VenueView;
 import com.eventticket.venue.repository.CityRepository;
 import com.eventticket.venue.repository.VenueRepository;
 import java.util.UUID;
@@ -28,13 +30,15 @@ public class CreateVenue {
     }
 
     @Transactional
-    public Venue create(String name, String address, String citySlug, String timezone) {
+    public VenueView create(String name, String address, String citySlug, String timezone) {
         UUID organizationId = TenantContext.requireOrganizationId();
         managers.requireCallerCanManageEvents(organizationId);
 
-        Venue venue = venues.save(new Venue(organizationId, name, address,
-                cities.findOrThrow(citySlug), timezone));
+        // Resolved before the write, so an unknown slug is refused by name rather than by a
+        // foreign key violation - and the row it returns is the name the response prints.
+        City city = cities.findOrThrow(citySlug);
+        Venue venue = venues.save(new Venue(organizationId, name, address, city.slug(), timezone));
         log.info("Created venue venueId={} city={}", venue.id(), citySlug);
-        return venue;
+        return new VenueView(venue, city.name());
     }
 }

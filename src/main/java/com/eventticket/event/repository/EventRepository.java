@@ -76,9 +76,9 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
              and e.startsAt > :now
              and e.startsAt >= :startsAfter
              and e.startsAt <= :startsBefore
-             and e.category.slug like :categorySlug
+             and e.categorySlug like :categorySlug
              and exists (select 1 from Venue v where v.id = e.venueId
-                           and v.city.slug like :citySlug)
+                           and v.citySlug like :citySlug)
              and (lower(function('immutable_unaccent', e.title))
                       like lower(function('immutable_unaccent', :q)) escape '\\'
                   or lower(function('immutable_unaccent', e.description))
@@ -120,10 +120,12 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
      *
      * <p>Categories matching nothing are missing from this result rather than present with a
      * zero, because a GROUP BY has no rows to group. {@code ListPublicEvents} fills them in
-     * from the Category set, which is where the zero criterion 17 asks for comes from.
+     * from the Category set, which is where the zero criterion 17 asks for comes from - and
+     * also where the display names come from, since an Event holds its Category's slug and
+     * nothing else.
      */
     @Query("""
-           select e.category.slug as slug, e.category.name as name, count(e) as count
+           select e.categorySlug as slug, count(e) as count
              from Event e
             where e.status = :published
               and e.listed = true
@@ -131,7 +133,7 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
               and e.startsAt >= :startsAfter
               and e.startsAt <= :startsBefore
               and exists (select 1 from Venue v where v.id = e.venueId
-                            and v.city.slug like :citySlug)
+                            and v.citySlug like :citySlug)
               and (lower(function('immutable_unaccent', e.title))
                        like lower(function('immutable_unaccent', :q)) escape '\\'
                    or lower(function('immutable_unaccent', e.description))
@@ -143,7 +145,7 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
                                 and lower(function('immutable_unaccent', oq.name))
                                     like lower(function('immutable_unaccent', :q)) escape '\\'))
               and e.organizationId in (select o.id from Organization o where o.status = :approved)
-            group by e.category.slug, e.category.name
+            group by e.categorySlug
            """)
     public List<CategoryCount> countPublicByCategory(@Param("now") Instant now,
                                                      @Param("published") Event.Status published,
@@ -156,8 +158,6 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
     /** Projection for {@link #countPublicByCategory}. Spring Data maps by alias. */
     public interface CategoryCount {
         String getSlug();
-
-        String getName();
 
         long getCount();
     }

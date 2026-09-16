@@ -4,6 +4,7 @@ import com.eventticket.api.VenuesApi;
 import com.eventticket.api.model.SeatMap;
 import com.eventticket.api.model.Venue;
 import com.eventticket.api.model.VenueInput;
+import com.eventticket.venue.domain.VenueView;
 import com.eventticket.venue.usecase.CreateVenue;
 import com.eventticket.venue.usecase.DeleteVenue;
 import com.eventticket.venue.usecase.GetSeatMap;
@@ -24,6 +25,10 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>{@code Venue} exists in both worlds under the same simple name, and since V14 so does
  * {@code City}. The generated ones are imported and the domain ones qualified; getting that
  * backwards compiles and then maps the wrong type.
+ *
+ * <p>The use cases answer {@link VenueView} rather than a Venue, because a Venue holds its
+ * City's slug and not the City. Resolving the name belongs in the use case, inside its
+ * transaction - a controller doing it would be a join in the web layer.
  */
 @RestController
 public class VenueController implements VenuesApi {
@@ -89,11 +94,12 @@ public class VenueController implements VenuesApi {
         return ResponseEntity.ok(SeatMapMapper.toDto(replaced));
     }
 
-    private static Venue toDto(com.eventticket.venue.domain.Venue venue) {
+    private static Venue toDto(VenueView view) {
+        com.eventticket.venue.domain.Venue venue = view.venue();
         // Slug and name both: a client filters by the first and prints the second, and
         // deriving either from the other is a lookup it should not have to hold.
-        var dto = new Venue(venue.name(), venue.city().slug(), venue.timezone(), venue.id(),
-                venue.city().name());
+        var dto = new Venue(venue.name(), venue.citySlug(), venue.timezone(), venue.id(),
+                view.cityName());
         dto.setAddress(venue.address());
         dto.setSeatCount(venue.seatCount());
         return dto;

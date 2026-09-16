@@ -9,8 +9,6 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Map;
@@ -52,17 +50,16 @@ public class Event {
     private String description;
 
     /**
-     * What kind of thing this is (requirements/009 criterion 12). Not nullable, because a
-     * nullable Category means every grouped row grows a branch for the Events that skipped the
-     * question, and they fall out of all of them silently - which is a bug you find months
-     * later by noticing a row is short.
+     * What kind of thing this is (requirements/009 criterion 12), held as the foreign key
+     * itself rather than as a mapped association - the same way {@code venueId} and
+     * {@code organizationId} are.
      *
-     * <p>Eager, like a Venue's City and for the same reason: the mapping to a DTO happens in
-     * the controller, outside this use case's transaction.
+     * <p>Not nullable, because a nullable Category means every grouped row grows a branch for
+     * the Events that skipped the question, and they fall out of all of them silently - a bug
+     * found months later by noticing a row is short.
      */
-    @ManyToOne
-    @JoinColumn(name = "category_slug", nullable = false)
-    private EventCategory category;
+    @Column(name = "category_slug", nullable = false)
+    private String categorySlug;
 
     @Column(name = "cover_image_url")
     private String coverImageUrl;
@@ -134,13 +131,13 @@ public class Event {
     protected Event() {}
 
     public Event(UUID organizationId, UUID venueId, String title, String description,
-                 EventCategory category, Instant startsAt, Instant doorsOpenAt, Instant endsAt,
+                 String categorySlug, Instant startsAt, Instant doorsOpenAt, Instant endsAt,
                  boolean listed) {
         this.organizationId = organizationId;
         this.venueId = venueId;
         this.title = title;
         this.description = description;
-        this.category = category;
+        this.categorySlug = categorySlug;
         this.startsAt = startsAt;
         this.doorsOpenAt = doorsOpenAt;
         this.endsAt = endsAt;
@@ -168,18 +165,23 @@ public class Event {
         return description;
     }
 
-    public EventCategory category() {
-        return category;
+    public String categorySlug() {
+        return categorySlug;
     }
 
     /**
      * requirements/003 criterion 8 territory: a Category is a description of the Event, not
      * something a sold Ticket depends on, so it moves for as long as the Event is editable.
      * Somebody who filed a comedy night under theatre should be able to say so afterwards.
+     *
+     * <p>Takes a slug the caller has already resolved. The Event does not reach the Category
+     * table to check one, for the same reason it does not reach the Venue table to check
+     * {@code venueId}: an entity that loads its own references is an entity whose every read
+     * is a join nobody asked for.
      */
-    public void categoriseAs(EventCategory category) {
+    public void categoriseAs(String categorySlug) {
         requireStillEditable();
-        this.category = category;
+        this.categorySlug = categorySlug;
     }
 
     public String coverImageUrl() {

@@ -5,8 +5,6 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
@@ -34,18 +32,15 @@ public class Venue {
     private String address;
 
     /**
-     * Separate from the address because the public listing filters on it, and a reference
-     * rather than text because the listing also groups and counts by it (requirements/009
-     * criterion 13).
+     * The City's slug, held as the foreign key itself rather than as a mapped association.
      *
-     * <p>Eagerly fetched, which is the default for {@code @ManyToOne} and is left alone
-     * deliberately. A Venue is mapped to a DTO in the controller, outside the use case's
-     * transaction, so a lazy City would be a {@code LazyInitializationException} at exactly
-     * the moment somebody reads a listing. It is one row from a table of ten.
+     * <p>Separate from the address because the public listing filters on it, and a reference
+     * rather than free text because the listing also groups and counts by it
+     * (requirements/009 criterion 13). Whoever needs the City's *name* asks
+     * {@code CityRepository} for it - see the note on foreign keys in CLAUDE.md.
      */
-    @ManyToOne
-    @JoinColumn(name = "city_slug", nullable = false)
-    private City city;
+    @Column(name = "city_slug", nullable = false)
+    private String citySlug;
 
     /**
      * An IANA zone. nfr.md stores every instant in UTC and displays it in the Venue's zone, so
@@ -63,11 +58,12 @@ public class Venue {
 
     protected Venue() {}
 
-    public Venue(UUID organizationId, String name, String address, City city, String timezone) {
+    public Venue(UUID organizationId, String name, String address, String citySlug,
+                 String timezone) {
         this.organizationId = organizationId;
         this.name = name;
         this.address = address;
-        this.city = city;
+        this.citySlug = citySlug;
         this.timezone = timezone;
     }
 
@@ -87,8 +83,8 @@ public class Venue {
         return address;
     }
 
-    public City city() {
-        return city;
+    public String citySlug() {
+        return citySlug;
     }
 
     public String timezone() {
@@ -116,10 +112,10 @@ public class Venue {
         return this;
     }
 
-    public void describeAs(String name, String address, City city, String timezone) {
+    public void describeAs(String name, String address, String citySlug, String timezone) {
         this.name = name;
         this.address = address;
-        this.city = city;
+        this.citySlug = citySlug;
         this.timezone = timezone;
     }
 

@@ -58,8 +58,11 @@ public class CreateEvent {
                 .requireBelongsTo(organizationId)
                 .seatMap();
 
+        // Resolved before the write so an unknown slug is refused by name rather than by a
+        // foreign key violation; the Event stores the slug, not the row.
         Event event = events.save(new Event(organizationId, venueId, title, description,
-                categories.findOrThrow(categorySlug), startsAt, doorsOpenAt, endsAt, listed));
+                categories.findOrThrow(categorySlug).slug(), startsAt, doorsOpenAt, endsAt,
+                listed));
 
         List<PricingTier> created = tiers.saveAll(map.tierNames().stream()
                 .map(name -> new PricingTier(organizationId, event.id(), name))

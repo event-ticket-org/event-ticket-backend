@@ -77,7 +77,7 @@ public class UpdateEvent {
         // depends on, so it moves for as long as the Event is editable - somebody who filed a
         // comedy night under theatre should be able to say so afterwards.
         if (changes.categorySlug() != null) {
-            event.categoriseAs(categories.findOrThrow(changes.categorySlug()));
+            event.categoriseAs(categories.findOrThrow(changes.categorySlug()).slug());
         }
 
         // The picture is uploaded, not patched (ADR-0006), but what it *shows* is text like

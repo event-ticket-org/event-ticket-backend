@@ -4,6 +4,7 @@ import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PricingTier;
 import com.eventticket.event.domain.PublicEventView;
+import com.eventticket.event.domain.EventCategory;
 import com.eventticket.event.domain.PublicListing;
 import com.eventticket.event.repository.EventCategoryRepository;
 import com.eventticket.event.repository.EventRepository;
@@ -17,6 +18,8 @@ import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.page.Paged;
 import com.eventticket.venue.domain.Venue;
+import com.eventticket.venue.domain.City;
+import com.eventticket.venue.repository.CityRepository;
 import com.eventticket.venue.repository.VenueRepository;
 import java.time.Instant;
 import java.util.List;
@@ -52,16 +55,19 @@ public class ListPublicEvents {
     private final VenueRepository venues;
     private final OrganizationRepository organizations;
     private final EventCategoryRepository categories;
+    private final CityRepository cities;
 
     public ListPublicEvents(EventRepository events, EventSeatRepository seats,
                      PricingTierRepository tiers, VenueRepository venues,
-                     OrganizationRepository organizations, EventCategoryRepository categories) {
+                     OrganizationRepository organizations, EventCategoryRepository categories,
+                     CityRepository cities) {
         this.events = events;
         this.seats = seats;
         this.tiers = tiers;
         this.venues = venues;
         this.organizations = organizations;
         this.categories = categories;
+        this.cities = cities;
     }
 
     /**
@@ -112,10 +118,19 @@ public class ListPublicEvents {
         Map<UUID, SeatCounts> counted = SeatCounts.asMap(
                 seats.countSeats(visible.stream().map(Event::id).toList(), now));
 
+        // Both vocabularies whole, once per page. They are a handful of immutable rows each,
+        // so reading all of them beats building a predicate - and beats the row-at-a-time
+        // fetching a mapped association would have done without anyone seeing it.
+        Map<String, String> cityNames = cities.findAll().stream()
+                .collect(Collectors.toMap(City::slug, City::name));
+        Map<String, String> categoryNames = categories.findAll().stream()
+                .collect(Collectors.toMap(EventCategory::slug, EventCategory::name));
+
         List<PublicEventView> items = visible.stream().map(event -> {
             Venue venue = venuesById.get(event.venueId());
             return new PublicEventView(event, organizationNames.get(event.organizationId()),
-                    venue.name(), venue.city().name(), venue.city().slug(), venue.timezone(),
+                    venue.name(), cityNames.get(venue.citySlug()), venue.citySlug(),
+                    categoryNames.get(event.categorySlug()), venue.timezone(),
                     EventPricing.of(event, null, tiersByEvent.getOrDefault(event.id(), List.of())),
                     SeatCounts.of(counted, event.id()).available(),
                     SeatCounts.of(counted, event.id()).total());
@@ -166,6 +181,9 @@ public class ListPublicEvents {
                 .stream()
                 .collect(Collectors.toMap(EventRepository.CategoryCount::getSlug,
                         EventRepository.CategoryCount::getCount));
+        // The names come from the Category set rather than from the grouped rows: an Event
+        // carries its Category's slug and nothing else, and the Categories that matched
+        // nothing have no grouped row to carry a name on anyway.
 
         return categories.findAllByOrderByPositionAsc().stream()
                 .map(category -> new PublicListing.CategoryCount(category.slug(), category.name(),

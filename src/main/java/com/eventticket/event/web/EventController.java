@@ -10,11 +10,13 @@ import com.eventticket.api.model.EventStatus;
 import com.eventticket.api.model.PricingTier;
 import com.eventticket.api.model.PricingTierInput;
 import com.eventticket.event.domain.Event;
+import com.eventticket.event.domain.EventCategory;
 import com.eventticket.event.domain.EventChanges;
 import com.eventticket.event.usecase.BeginCoverUpload;
 import com.eventticket.event.usecase.CloseSales;
 import com.eventticket.event.usecase.CreateEvent;
 import com.eventticket.event.usecase.GetEvent;
+import com.eventticket.event.usecase.ListCategories;
 import com.eventticket.event.usecase.ListEvents;
 import com.eventticket.event.usecase.PublishEvent;
 import com.eventticket.event.usecase.RemoveEventCover;
@@ -30,6 +32,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
@@ -47,12 +50,13 @@ public class EventController implements EventsApi {
     private final BeginCoverUpload beginCoverUpload;
     private final SetEventCover setEventCover;
     private final RemoveEventCover removeEventCover;
+    private final ListCategories listCategories;
 
     public EventController(CreateEvent createEvent, ListEvents listEvents, GetEvent getEvent,
                     UpdateEvent updateEvent, SetPricingTiers setPricingTiers,
                     PublishEvent publishEvent, CloseSales closeSales,
                     BeginCoverUpload beginCoverUpload, SetEventCover setEventCover,
-                    RemoveEventCover removeEventCover) {
+                    RemoveEventCover removeEventCover, ListCategories listCategories) {
         this.createEvent = createEvent;
         this.listEvents = listEvents;
         this.getEvent = getEvent;
@@ -63,6 +67,7 @@ public class EventController implements EventsApi {
         this.beginCoverUpload = beginCoverUpload;
         this.setEventCover = setEventCover;
         this.removeEventCover = removeEventCover;
+        this.listCategories = listCategories;
     }
 
     @Override
@@ -71,7 +76,7 @@ public class EventController implements EventsApi {
                 request.getCategorySlug(), request.getVenueId(), request.getStartsAt().toInstant(),
                 at(request.getDoorsOpenAt()), at(request.getEndsAt()),
                 request.getListed() == null || request.getListed());
-        return ResponseEntity.status(HttpStatus.CREATED).body(EventMapper.toDto(created));
+        return ResponseEntity.status(HttpStatus.CREATED).body(toDto(created));
     }
 
     @Override
@@ -80,20 +85,22 @@ public class EventController implements EventsApi {
                 status == null ? null : Event.Status.valueOf(status.getValue()), limit, cursor);
 
         var dto = new EventPage();
-        page.items().forEach(detail -> dto.addItemsItem(EventMapper.toDto(detail)));
+        // Hoisted out of the loop deliberately: inside it, this is one query per row.
+        Map<String, String> names = categoryNames();
+        page.items().forEach(detail -> dto.addItemsItem(EventMapper.toDto(detail, names)));
         dto.setNextCursor(page.nextCursor());
         return ResponseEntity.ok(dto);
     }
 
     @Override
     public ResponseEntity<com.eventticket.api.model.Event> eventsEventIdGet(UUID eventId) {
-        return ResponseEntity.ok(EventMapper.toDto(getEvent.get(eventId)));
+        return ResponseEntity.ok(toDto(getEvent.get(eventId)));
     }
 
     @Override
     public ResponseEntity<com.eventticket.api.model.Event> eventsEventIdPatch(
             UUID eventId, EventPatch request) {
-        return ResponseEntity.ok(EventMapper.toDto(updateEvent.update(eventId, toChanges(request))));
+        return ResponseEntity.ok(toDto(updateEvent.update(eventId, toChanges(request))));
     }
 
     /**
@@ -111,12 +118,12 @@ public class EventController implements EventsApi {
 
     @Override
     public ResponseEntity<com.eventticket.api.model.Event> eventsEventIdPublishPost(UUID eventId) {
-        return ResponseEntity.ok(EventMapper.toDto(publishEvent.publish(eventId)));
+        return ResponseEntity.ok(toDto(publishEvent.publish(eventId)));
     }
 
     @Override
     public ResponseEntity<com.eventticket.api.model.Event> eventsEventIdCloseSalesPost(UUID eventId) {
-        return ResponseEntity.ok(EventMapper.toDto(closeSales.close(eventId)));
+        return ResponseEntity.ok(toDto(closeSales.close(eventId)));
     }
 
     @Override
@@ -133,7 +140,7 @@ public class EventController implements EventsApi {
     @Override
     public ResponseEntity<com.eventticket.api.model.Event> eventsEventIdCoverPut(
             UUID eventId, CoverConfirmation request) {
-        return ResponseEntity.ok(EventMapper.toDto(
+        return ResponseEntity.ok(toDto(
                 setEventCover.set(eventId, request.getUploadId(), request.getAlt())));
     }
 
@@ -141,6 +148,22 @@ public class EventController implements EventsApi {
     public ResponseEntity<Void> eventsEventIdCoverDelete(UUID eventId) {
         removeEventCover.remove(eventId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * An Event holds its Category's slug and nothing else, so the display name is a read
+     * rather than a field. One row's worth here; the listing hoists the same call out of its
+     * loop, which is the whole difference between this and a mapped association - the cost is
+     * visible and the decision about where to pay it is ours.
+     */
+    private com.eventticket.api.model.Event toDto(
+            com.eventticket.event.domain.EventDetail detail) {
+        return EventMapper.toDto(detail, categoryNames());
+    }
+
+    private Map<String, String> categoryNames() {
+        return listCategories.list().stream()
+                .collect(Collectors.toMap(EventCategory::slug, EventCategory::name));
     }
 
     private static EventChanges toChanges(EventPatch request) {
