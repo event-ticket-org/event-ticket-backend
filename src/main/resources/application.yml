@@ -87,6 +87,24 @@ app:
   security:
     issuer: event-ticket
     jwt-secret: ${JWT_SECRET}
+  search:
+    # Absent means there is no search cluster, the same shape STRIPE_SECRET_KEY and MAIL_HOST
+    # use: a fresh clone and the suite's non-search tests run without one, and the listing
+    # serves from Postgres. Empty counts as absent - a compose file that declares the variable
+    # with nothing behind it hands the application an empty string, which is the trap MAIL_HOST
+    # documents.
+    # Deliberately not written as `uri: ${SEARCH_URI:}`. An empty default is a value, and
+    # @ConditionalOnProperty treats present-but-empty as present - so a deployment with no
+    # cluster would switch the indexer on and then fail building a client from "". The key is
+    # absent here and set by APP_SEARCH_URI in the environment, which relaxed binding maps onto
+    # it. Same trap the replica datasource url documents.
+    # The clock, which the suite turns off. The work is driven directly there.
+    scheduled: true
+    # Frequent, because the delay is visible: somebody publishes an event and then searches for
+    # it. Two seconds is under the time it takes to type a query.
+    drain-interval: PT2S
+    # After the 03:00 database backup rather than during it.
+    rebuild-cron: "0 20 3 * * *"
   checkout:
     # requirements/004 criterion 5. The buyer is shown this counting down.
     hold-window: PT10M

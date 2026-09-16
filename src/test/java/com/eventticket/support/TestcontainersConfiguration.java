@@ -12,6 +12,7 @@ import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
+import org.testcontainers.elasticsearch.ElasticsearchContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -52,6 +53,39 @@ public class TestcontainersConfiguration {
 	@ServiceConnection
 	public PostgreSQLContainer postgresContainer() {
 		return new PostgreSQLContainer(DockerImageName.parse("postgres:latest"));
+	}
+
+	/**
+	 * A real Elasticsearch, for the whole suite.
+	 *
+	 * <p>No in-memory fake behind the port. The premise the search work rests on is that
+	 * {@code asciifolding} reproduces what Postgres's {@code unaccent} does - so that "ha noi"
+	 * finds "Hà Nội" - and that is a claim about an analyzer, which only an analyzer can answer.
+	 * A fake would let it regress in silence, and the same is true of every mapping decision:
+	 * a keyword field that should have been text is a query returning nothing, and a stand-in
+	 * has no opinion about either.
+	 *
+	 * <p>Security off and a single node, because this is a test cluster on a laptop and in CI.
+	 * A small heap for the same reason - the default sizes itself from the host's RAM, which on
+	 * a CI runner is most of the runner.
+	 */
+	@Bean
+	public ElasticsearchContainer searchContainer() {
+		return new ElasticsearchContainer(
+				DockerImageName.parse("docker.elastic.co/elasticsearch/elasticsearch:9.4.5"))
+				.withEnv("discovery.type", "single-node")
+				.withEnv("xpack.security.enabled", "false")
+				.withEnv("ES_JAVA_OPTS", "-Xms512m -Xmx512m");
+	}
+
+	/**
+	 * Points the application at it. {@code app.search.uri} present is what turns the indexer on
+	 * - absent means there is no cluster, which is how a deployment without one runs.
+	 */
+	@Bean
+	public DynamicPropertyRegistrar searchProperties(ElasticsearchContainer search) {
+		return registry -> registry.add("app.search.uri",
+				() -> "http://" + search.getHttpHostAddress().replaceFirst("^https?://", ""));
 	}
 
 	/**

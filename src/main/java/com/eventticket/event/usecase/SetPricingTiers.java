@@ -5,6 +5,7 @@ import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PricingTier;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.error.ApiException;
@@ -42,15 +43,19 @@ public class SetPricingTiers {
     private final AuditTrail audit;
     private final long minimumAmount;
 
+    private final SearchOutbox searchOutbox;
+
     public SetPricingTiers(EventRepository events, PricingTierRepository tiers, VenueRepository venues,
                     Managers managers, AuditTrail audit,
-                    @Value("${app.pricing.minimum-amount}") long minimumAmount) {
+                    @Value("${app.pricing.minimum-amount}") long minimumAmount,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.tiers = tiers;
         this.venues = venues;
         this.managers = managers;
         this.audit = audit;
         this.minimumAmount = minimumAmount;
+        this.searchOutbox = searchOutbox;
     }
 
     /**
@@ -110,6 +115,10 @@ public class SetPricingTiers {
 
         List<PricingTier> saved = tiers.saveAll(byName.values());
         audit.record(organizationId, AuditTrail.EVENT_PRICES_CHANGED, event.title());
+        // The index is derived from this Event, so it is told the Event changed rather
+        // than told what it changed to - see SearchOutbox.
+        searchOutbox.changed(eventId);
+
         log.info("Priced event eventId={} tiers={}", eventId, prices.keySet());
 
         return EventPricing.of(event, map, saved);

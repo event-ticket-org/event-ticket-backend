@@ -5,6 +5,7 @@ import com.eventticket.event.domain.EventDetail;
 import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.tenancy.TenantContext;
@@ -29,12 +30,16 @@ public class CloseSales {
     private final Managers managers;
     private final AuditTrail audit;
 
+    private final SearchOutbox searchOutbox;
+
     public CloseSales(EventRepository events, PricingTierRepository tiers,
-               Managers managers, AuditTrail audit) {
+               Managers managers, AuditTrail audit,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.tiers = tiers;
         this.managers = managers;
         this.audit = audit;
+        this.searchOutbox = searchOutbox;
     }
 
     @Transactional
@@ -47,6 +52,10 @@ public class CloseSales {
         events.save(event);
 
         audit.record(organizationId, AuditTrail.EVENT_SALES_CLOSED, event.title());
+        // The index is derived from this Event, so it is told the Event changed rather
+        // than told what it changed to - see SearchOutbox.
+        searchOutbox.changed(eventId);
+
         log.info("Closed sales eventId={}", eventId);
 
         return EventDetail.of(event, EventPricing.of(event, null, tiers.findByEventId(eventId)));

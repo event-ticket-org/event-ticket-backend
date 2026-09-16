@@ -2,6 +2,7 @@ package com.eventticket.event.usecase;
 
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.repository.EventRepository;
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.event.storage.object.ObjectStore;
 import com.eventticket.shared.tenancy.TenantContext;
@@ -24,10 +25,14 @@ public class RemoveEventCover {
     private final Managers managers;
     private final ObjectStore store;
 
-    public RemoveEventCover(EventRepository events, Managers managers, ObjectStore store) {
+    private final SearchOutbox searchOutbox;
+
+    public RemoveEventCover(EventRepository events, Managers managers, ObjectStore store,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.managers = managers;
         this.store = store;
+        this.searchOutbox = searchOutbox;
     }
 
     @Transactional
@@ -42,5 +47,9 @@ public class RemoveEventCover {
         // will point at once this returns.
         event.clearCover().forEach(store::delete);
         events.save(event);
+
+        // The index is derived from this Event, so it is told the Event changed rather than
+        // told what it changed to - see SearchOutbox.
+        searchOutbox.changed(eventId);
     }
 }

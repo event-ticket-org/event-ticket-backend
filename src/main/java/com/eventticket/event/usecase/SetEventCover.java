@@ -1,5 +1,6 @@
 package com.eventticket.event.usecase;
 
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.event.support.CoverImageKeys;
 
 import com.eventticket.event.domain.Event;
@@ -60,15 +61,19 @@ public class SetEventCover {
      */
     private static final int[] WIDTHS = {320, 640, 1280};
 
+    private final SearchOutbox searchOutbox;
+
     public SetEventCover(EventRepository events, PricingTierRepository tiers,
                          VenueRepository venues, Managers managers, ObjectStore store,
-                         ImageRenderer renderer) {
+                         ImageRenderer renderer,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.tiers = tiers;
         this.venues = venues;
         this.managers = managers;
         this.store = store;
         this.renderer = renderer;
+        this.searchOutbox = searchOutbox;
     }
 
     @Transactional
@@ -112,6 +117,10 @@ public class SetEventCover {
         event.coverIs(servedKey, store.publicUrl(servedKey), alt, renderings)
                 .forEach(store::delete);
         events.save(event);
+
+        // The index is derived from this Event, so it is told the Event changed rather
+        // than told what it changed to - see SearchOutbox.
+        searchOutbox.changed(eventId);
 
         log.info("Set cover eventId={} type={} bytes={} renderings={}",
                 eventId, type, uploaded.size(), renderings.size());

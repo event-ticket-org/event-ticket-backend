@@ -7,6 +7,7 @@ import com.eventticket.event.domain.EventSeat;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.EventSeatRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.organization.repository.OrganizationRepository;
 import com.eventticket.shared.audit.AuditTrail;
@@ -51,9 +52,12 @@ public class PublishEvent {
     private final Managers managers;
     private final AuditTrail audit;
 
+    private final SearchOutbox searchOutbox;
+
     public PublishEvent(EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
                  VenueRepository venues, OrganizationRepository organizations,
-                 Managers managers, AuditTrail audit) {
+                 Managers managers, AuditTrail audit,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.seats = seats;
         this.tiers = tiers;
@@ -61,6 +65,7 @@ public class PublishEvent {
         this.organizations = organizations;
         this.managers = managers;
         this.audit = audit;
+        this.searchOutbox = searchOutbox;
     }
 
     @Transactional
@@ -103,6 +108,10 @@ public class PublishEvent {
         events.saveAndFlush(event);
 
         audit.record(organizationId, AuditTrail.EVENT_PUBLISHED, event.title());
+        // The index is derived from this Event, so it is told the Event changed rather
+        // than told what it changed to - see SearchOutbox.
+        searchOutbox.changed(eventId);
+
         log.info("Published event eventId={} seats={} tiers={}",
                 eventId, map.seats().size(), pricing.tiers().size());
 
