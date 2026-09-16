@@ -1,5 +1,7 @@
 package com.eventticket.event.usecase;
 
+import com.eventticket.event.support.CoverImageKeys;
+
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventDetail;
 import com.eventticket.event.domain.CoverRendering;
@@ -9,10 +11,10 @@ import com.eventticket.event.repository.PricingTierRepository;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
-import com.eventticket.shared.storage.ImageRenderer;
-import com.eventticket.shared.storage.ImageType;
-import com.eventticket.shared.storage.ObjectStore;
-import com.eventticket.shared.storage.StoredObject;
+import com.eventticket.event.storage.image.ImageRenderer;
+import com.eventticket.event.storage.image.ImageType;
+import com.eventticket.event.storage.object.ObjectStore;
+import com.eventticket.event.storage.object.StoredObject;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.venue.repository.VenueRepository;
 import java.util.ArrayList;

@@ -30,8 +30,37 @@ com.eventticket.<feature>
 └── support/      feature-local infrastructure, where a feature needs any
 ```
 
-`shared/` is subdivided by capability instead: `audit/`, `email/`, `error/`, `money/`,
-`page/`, `tenancy/`. The bar for adding to `shared` is that **every** feature needs it.
+`shared/` is subdivided by capability instead: `audit/`, `directory/`, `email/`, `error/`,
+`money/`, `page/`, `persistence/`, `tenancy/`.
+
+**The bar for `shared` is that more than one module needs it, or that the whole application runs
+on it whoever names it.** The second half is not a loophole, it is `persistence/`: read routing
+supplies the `DataSource` every query in the system goes through, and exactly one class imports
+it by name. Counting importers would have thrown it out.
+
+It used to say *every* feature needs it, and nothing met that - measured across the nine feature
+modules, `error` reaches eight, `tenancy` seven, `email` five, `page` two. A bar nothing clears
+is not the one being applied, and `storage/` is what that cost: it sat in `shared` for the life
+of the project while this file said, forty lines below, that `event` used it and nothing else
+did. It lives in `event/storage/` now.
+
+**A capability with more than a handful of classes is grouped by the part of itself it belongs
+to**, because the capability name stops being enough to find anything:
+
+```
+email/       EmailSender            the port every feature calls
+             outbox/                the durable record and its retry
+             transport/             how a message actually leaves
+persistence/ routing/               which node a query goes to
+             freshness/             whether the replica has caught up
+```
+
+`event/storage/` is grouped the same way — `object/` for the store and its port, `image/` for
+turning an upload into renderings, `StorageProperties` at the root as configuration.
+
+`directory/` holds `UserDirectory`, which is the port `organization` reaches people through so
+that it and `identity` never become mutually dependent. It sat on the module root for a while,
+which made `shared` the only module breaking the rule at the top of this section.
 
 A use case is a class named after the action — `PublishEvent`, `CreateSeatHold`, `ScanTicket`
 — with a method named for the domain verb. Every endpoint gets one, reads included;
@@ -159,7 +188,11 @@ identity as part of its own work (token refresh) or acts on an organization from
 ## Object storage
 
 Cover images go straight from the browser to the store and are checked afterwards (ADR-0006).
-`shared/storage` is the port and the S3 adapter; `event` uses it and nothing else does.
+`event/storage` is the port and the S3 adapter, and it lives in `event` because `event` is the
+only module that uses it. It was in `shared/` until the sentence you are reading was noticed to
+contradict the bar for `shared` stated at the top of this file. Being a port is an argument for
+the interface, not for the package: `ObjectStore` inverts the dependency on S3 wherever it sits.
+If `ticket` ever needs object storage for a PDF, moving it back is this change reversed.
 
 **The presigned POST policy is written by hand, and that is not an oversight.** The Java SDK v2
 presigns GET and PUT and has no POST policy at all, where the JavaScript and Python SDKs do. A
@@ -357,6 +390,26 @@ auto-configuration registers a bean of that name and a second one stops the app 
 
 Integration tests run against real Postgres via Testcontainers. `ApiTest` drives the app over
 HTTP; extend it.
+
+**Where a test file goes follows from what it exercises**, and the two cases are different:
+
+```
+src/test/java/com/eventticket/
+├── architecture/   the shape of the code, not its behaviour - ModularityTest,
+│                   DeploymentConfigurationTest
+├── support/        everything a test needs and nothing a test asserts - ApiTest,
+│                   TestcontainersConfiguration, TestBackendApplication, fakes, fixtures
+├── <feature>/      behaviour a person can describe: EventLifecycleTest, BuyingTicketsTest
+└── <feature>/<sub-package>/   a test of one class, mirroring where that class lives
+```
+
+A test that exercises a **user-visible behaviour** sits at the feature root and is named for the
+behaviour - `BuyingTicketsTest`, not `BeginCheckoutTest`. A test that exercises **one class**
+mirrors that class's package: `Lsn` is in `shared/persistence`, so `LsnTest` is too.
+
+The rule was already being followed almost everywhere and had never been written down, which is
+exactly how `ImageRendererTest` came to sit in `shared/` while `ImageRenderer` lived in
+`shared/storage`. An unwritten convention is one nobody can be wrong about on purpose.
 
 **A tenancy test that goes through a tenant-filtered repository method is vacuous.**
 `ListMembers` filters by organization in its own query, so tests through it pass with RLS

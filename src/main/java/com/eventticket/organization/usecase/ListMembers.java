@@ -1,7 +1,7 @@
 package com.eventticket.organization.usecase;
 
 import com.eventticket.shared.tenancy.TenantContext;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import java.util.List;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;

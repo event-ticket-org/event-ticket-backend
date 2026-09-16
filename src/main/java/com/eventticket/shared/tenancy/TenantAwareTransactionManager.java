@@ -1,7 +1,7 @@
 package com.eventticket.shared.tenancy;
 
-import com.eventticket.shared.persistence.LastWriteStore;
-import com.eventticket.shared.persistence.RoutingContext;
+import com.eventticket.shared.persistence.freshness.LastWriteStore;
+import com.eventticket.shared.persistence.routing.RoutingContext;
 import jakarta.persistence.EntityManagerFactory;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

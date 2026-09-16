@@ -5,7 +5,7 @@ import com.eventticket.checkout.repository.OrderRepository;
 import com.eventticket.payment.domain.PaymentProvider;
 import com.eventticket.payment.domain.PaymentSession;
 import com.eventticket.payment.repository.PaymentSessionRepository;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.tenancy.TenantContext;

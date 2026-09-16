@@ -7,7 +7,7 @@ import com.eventticket.checkout.repository.OrderRepository;
 import com.eventticket.checkout.repository.OrderSeatRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.organization.domain.Managers;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import com.eventticket.event.support.PageCursor;
 import com.eventticket.shared.page.Paged;
 import com.eventticket.shared.tenancy.TenantContext;

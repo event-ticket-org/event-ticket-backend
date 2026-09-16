@@ -9,7 +9,7 @@ import com.eventticket.api.model.Ticket;
 import com.eventticket.api.model.TokenPair;
 import com.eventticket.api.model.Venue;
 import com.eventticket.support.ApiTest;
-import com.eventticket.shared.email.DispatchPendingEmails;
+import com.eventticket.shared.email.outbox.DispatchPendingEmails;
 import com.eventticket.support.SeatMaps;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;

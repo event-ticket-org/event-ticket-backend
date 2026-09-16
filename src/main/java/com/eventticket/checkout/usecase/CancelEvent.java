@@ -2,14 +2,14 @@ package com.eventticket.checkout.usecase;
 
 import com.eventticket.checkout.domain.EventCancellation;
 import com.eventticket.checkout.domain.Order;
-import com.eventticket.shared.persistence.PrimaryOnly;
+import com.eventticket.shared.persistence.routing.PrimaryOnly;
 import com.eventticket.checkout.repository.OrderRepository;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.payment.domain.Refund;
 import com.eventticket.payment.repository.RefundRepository;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.email.EmailSender;
 import com.eventticket.shared.tenancy.TenantContext;

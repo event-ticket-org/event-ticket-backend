@@ -5,7 +5,7 @@ import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.error.ErrorCodes;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.shared.tenancy.TenantPublisher;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
