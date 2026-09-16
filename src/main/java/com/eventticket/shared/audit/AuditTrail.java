@@ -38,6 +38,13 @@ public class AuditTrail {
     /** requirements/008 criterion 11: the provider took a settlement back. */
     public static final String ORDER_REFUND_REVERSED = "ORDER_REFUND_REVERSED";
     public static final String EVENT_CANCELLED = "EVENT_CANCELLED";
+    /**
+     * requirements/009 criterion 14: the platform placed this Organization's Event in the
+     * curated row. Recorded against the Organization rather than against the platform, because
+     * {@code audit_entry} has no such thing as a platform-level row - and because being
+     * featured is something that happened to them, so theirs is the trail to look in.
+     */
+    public static final String EVENT_FEATURED = "EVENT_FEATURED";
 
     private final AuditEntryRepository entries;
 

@@ -506,6 +506,21 @@ unaccented only the column, so typing a title exactly as written found nothing.
 the deployed application needs no superuser (verified against a `NOSUPERUSER` role, because the
 connection user is a superuser in development and test and would have proved nothing).
 
+**An unauthenticated read of tenant-scoped rows needs a `SECURITY DEFINER` function, not a
+wider policy.** The ranked row ranks by Tickets sold, which means reading `ticket_order` and
+`order_seat` - both tenant-scoped, and a visitor on the home page is neither the Organization's
+staff nor the buyer. The obvious query therefore returns nothing at all from a public request,
+which is the policy working and is how it was found: the chart came back empty with sales
+plainly in the database.
+
+`trending_event_ids` (V15) is the grant, and it is the third instance of this shape here after
+`organization_owner_ids` (V12) and the seat-hold functions (V5). **It returns ids and an order
+and never a count**, because requirements/009 criterion 15 publishes the ranking and withholds
+the figures - a position says one Event outsold another, where a number says what an
+Organization took, across Organizations, to anybody who loads the page. Keeping the count out of
+the *signature* makes that a property of the schema rather than of whoever writes the mapping
+next.
+
 **A foreign key is a field, never a mapped association.** Every entity holds its references
 as the key itself - `organizationId`, `venueId`, `eventId`, `buyerUserId`, `categorySlug`,
 `citySlug` - and whoever needs the row behind one asks a repository. There is no `@ManyToOne`,

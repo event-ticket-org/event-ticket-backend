@@ -12,36 +12,74 @@ import com.eventticket.platform.domain.OrganizationReview;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import com.eventticket.platform.usecase.DecideOrganization;
+import com.eventticket.platform.usecase.ListFeaturedSlots;
+import com.eventticket.platform.usecase.ReplaceFeaturedSlots;
 import com.eventticket.platform.usecase.ListPendingOrganizations;
+import com.eventticket.platform.support.FeaturedEventSummaries;
 
 @RestController
 public class PlatformAdminController implements PlatformAdminApi {
 
     private final ListPendingOrganizations listPendingOrganizations;
     private final DecideOrganization decideOrganization;
+    private final ListFeaturedSlots listFeaturedSlots;
+    private final ReplaceFeaturedSlots replaceFeaturedSlots;
+    private final FeaturedEventSummaries featuredEventSummaries;
 
     public PlatformAdminController(ListPendingOrganizations listPendingOrganizations,
-                            DecideOrganization decideOrganization) {
+                            DecideOrganization decideOrganization,
+                            ListFeaturedSlots listFeaturedSlots,
+                            ReplaceFeaturedSlots replaceFeaturedSlots,
+                            FeaturedEventSummaries featuredEventSummaries) {
         this.listPendingOrganizations = listPendingOrganizations;
         this.decideOrganization = decideOrganization;
+        this.listFeaturedSlots = listFeaturedSlots;
+        this.replaceFeaturedSlots = replaceFeaturedSlots;
+        this.featuredEventSummaries = featuredEventSummaries;
     }
 
     /**
-     * Curation, recognised and not yet built - see {@code PublicEventController} for why these
-     * answer 501 rather than an empty row.
+     * The whole curated row, including what is not showing.
+     *
+     * <p>Every slot carries the Event it points at, because an administrator picking a
+     * position is looking at titles rather than at uuids. That summary is the one the public
+     * row uses - {@code EventMapper} is public for exactly this - so the two screens cannot
+     * disagree about what an Event looks like.
      */
     @Override
     public ResponseEntity<List<FeaturedSlot>> adminFeaturedSlotsGet() {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        return ResponseEntity.ok(toDto(listFeaturedSlots.list()));
     }
 
     @Override
     public ResponseEntity<List<FeaturedSlot>> adminFeaturedSlotsPut(List<FeaturedSlotInput> request) {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        var placements = request.stream()
+                .map(input -> new ReplaceFeaturedSlots.Placement(input.getEventId(),
+                        input.getStartsAt().toInstant(), input.getEndsAt().toInstant()))
+                .toList();
+        return ResponseEntity.ok(toDto(replaceFeaturedSlots.replace(placements)));
+    }
+
+    /**
+     * Slots with their Events.
+     *
+     * <p>The Events are read as a page rather than one per slot - a curated row of twenty
+     * placements is one query, not twenty. A slot whose Event is no longer listable keeps its
+     * place here and is absent from the public row; an administrator has to be able to see the
+     * placement that stopped working in order to remove it.
+     */
+    private List<FeaturedSlot> toDto(List<com.eventticket.event.domain.FeaturedSlot> slots) {
+        var byId = featuredEventSummaries.of(slots);
+        return slots.stream().map(slot -> {
+            var dto = new FeaturedSlot(slot.eventId(),
+                    slot.startsAt().atOffset(ZoneOffset.UTC),
+                    slot.endsAt().atOffset(ZoneOffset.UTC),
+                    slot.id(), slot.position(), byId.get(slot.eventId()));
+            return dto;
+        }).toList();
     }
 
     @Override

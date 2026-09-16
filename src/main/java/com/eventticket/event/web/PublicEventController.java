@@ -13,6 +13,8 @@ import com.eventticket.api.model.TrendingEvent;
 import com.eventticket.event.usecase.GetPublicEvent;
 import com.eventticket.event.usecase.GetPublicEventSeatMap;
 import com.eventticket.event.usecase.ListCategories;
+import com.eventticket.event.usecase.ListFeaturedEvents;
+import com.eventticket.event.usecase.ListTrendingEvents;
 import com.eventticket.event.usecase.ListPublicEvents;
 import com.eventticket.venue.usecase.ListCities;
 import java.time.Instant;
@@ -35,9 +37,9 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>{@code Category} and {@code City} exist as both generated and domain types, like
  * {@code Venue} before them. The generated ones are imported and the domain ones qualified.
  *
- * <p>The curated and ranked rows are not implemented here yet. The generated interface answers
- * 501 for each until they are, which is a truthful answer and a better one than an empty array
- * - an empty row means "nothing is featured today", and that is not what is happening.
+ * <p>The curated and ranked rows answer an empty array when they are not shown, which for
+ * those two is the truth rather than a placeholder: there is no such thing as a featured row
+ * that exists but has nothing in it.
  */
 @RestController
 public class PublicEventController implements PublicApi {
@@ -47,15 +49,21 @@ public class PublicEventController implements PublicApi {
     private final GetPublicEventSeatMap getPublicEventSeatMap;
     private final ListCategories listCategories;
     private final ListCities listCities;
+    private final ListFeaturedEvents listFeaturedEvents;
+    private final ListTrendingEvents listTrendingEvents;
 
     public PublicEventController(ListPublicEvents listPublicEvents, GetPublicEvent getPublicEvent,
                           GetPublicEventSeatMap getPublicEventSeatMap,
-                          ListCategories listCategories, ListCities listCities) {
+                          ListCategories listCategories, ListCities listCities,
+                          ListFeaturedEvents listFeaturedEvents,
+                          ListTrendingEvents listTrendingEvents) {
         this.listPublicEvents = listPublicEvents;
         this.getPublicEvent = getPublicEvent;
         this.getPublicEventSeatMap = getPublicEventSeatMap;
         this.listCategories = listCategories;
         this.listCities = listCities;
+        this.listFeaturedEvents = listFeaturedEvents;
+        this.listTrendingEvents = listTrendingEvents;
     }
 
     @Override
@@ -93,26 +101,33 @@ public class PublicEventController implements PublicApi {
 
 
     /**
-     * The curated and ranked rows, recognised and not yet built.
-     *
-     * <p>501 rather than an empty array, and the distinction is the whole reason these are
-     * written out rather than left to a generated default. An empty array is an answer: it says
-     * nothing is featured today, which a client will render as a row it drew and found bare.
-     * 501 says the server has not implemented this, which is what is true - and it is the
-     * status a client can branch on to draw nothing at all.
-     *
-     * <p>The contract landed whole because it is one coherent revision; the implementation
-     * follows it in sequence. {@code EventDiscoveryTest} asserts this answer, so the day these
-     * are built is the day a test tells somebody to delete this comment.
+     * The curated row. An empty array means the row is not shown - which covers both "nobody
+     * has placed anything" and "what was placed no longer qualifies", because to a client they
+     * are the same instruction: draw nothing.
      */
     @Override
     public ResponseEntity<List<PublicEventSummary>> publicFeaturedEventsGet() {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        return ResponseEntity.ok(listFeaturedEvents.list().stream()
+                .map(EventMapper::toSummaryDto)
+                .toList());
     }
 
+    /**
+     * The ranked row, numbered from one.
+     *
+     * <p>The rank is assigned here, from the order the use case answered in, because that is
+     * what a rank is - a position in a list. Nothing carries the sales figures that produced
+     * it (requirements/009 criterion 15): a position says one Event outsold another, where a
+     * count says what an Organization took, to anybody who loads the page.
+     */
     @Override
     public ResponseEntity<List<TrendingEvent>> publicTrendingEventsGet() {
-        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+        var ranked = listTrendingEvents.list();
+        var dto = new java.util.ArrayList<TrendingEvent>(ranked.size());
+        for (int index = 0; index < ranked.size(); index++) {
+            dto.add(new TrendingEvent(index + 1, EventMapper.toSummaryDto(ranked.get(index))));
+        }
+        return ResponseEntity.ok(dto);
     }
 
     @Override

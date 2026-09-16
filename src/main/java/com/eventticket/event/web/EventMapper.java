@@ -23,8 +23,16 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 
-/** Contract shapes, in one place, so that neither Event controller grows a second version. */
-final class EventMapper {
+/**
+ * Contract shapes, in one place, so that no controller grows a second version of one.
+ *
+ * <p>Public now, and reached from {@code platform.web} as well, because the curated row's
+ * administrative view embeds the same {@code PublicEventSummary} the public row does. Two
+ * mappers for one shape is how a summary ends up carrying a price on one screen and not on
+ * another - which is the thing this class exists to prevent, and the reason is the same
+ * whether the second reader is a controller in this module or the next one.
+ */
+public final class EventMapper {
 
     private EventMapper() {}
 
@@ -89,7 +97,7 @@ final class EventMapper {
         return dto;
     }
 
-    static PublicEventSummary toSummaryDto(PublicEventView view) {
+    public static PublicEventSummary toSummaryDto(PublicEventView view) {
         Event event = view.event();
         var dto = new PublicEventSummary(event.id(), event.title(), view.organizationName(),
                 view.venueName(), view.city(), view.citySlug(), view.categorySlug(),

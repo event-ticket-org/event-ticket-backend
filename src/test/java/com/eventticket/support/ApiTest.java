@@ -165,7 +165,8 @@ public abstract class ApiTest {
     }
 
     /** Created on first use and signed in afterwards, so a test may approve more than once. */
-    private TokenPair platformAdmin() {
+    /** Protected since the curated row: a test that places one has to be an administrator. */
+    protected TokenPair platformAdmin() {
         String address = PLATFORM_ADMIN_EMAIL;
         ResponseEntity<Void> registered = http.postForEntity("/auth/register",
                 new RegisterRequest(address, "correct-horse-battery", "Platform Admin"), Void.class);

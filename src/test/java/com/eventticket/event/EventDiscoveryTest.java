@@ -275,19 +275,21 @@ class EventDiscoveryTest extends ApiTest {
     }
 
     /**
-     * The curated and ranked rows are in the contract and not yet built. 501 rather than an
-     * empty array, because an empty array is an answer - it says nothing is featured today, and
-     * a client would draw a row and find it bare.
+     * The curated and ranked rows answer an empty array when there is nothing to show, which
+     * for those two is the truth rather than a placeholder - there is no such thing as a
+     * featured row that exists and holds nothing.
      *
-     * <p>This test is the reminder. The day either is implemented it fails and says so.
+     * <p>They answered 501 until they were built, and this test is what said so. It now says
+     * the opposite, which is the point of having written it: {@link FeaturedAndTrendingTest}
+     * owns what they do when there is something to show.
      */
     @Test
-    @DisplayName("the rows not built yet say so, rather than saying they are empty")
-    void theRowsNotBuiltYetSaySo() {
+    @DisplayName("the curated and ranked rows are empty rather than absent when nothing qualifies")
+    void theRowsAreEmptyRatherThanAbsent() {
         assertThat(exchange(HttpMethod.GET, "/public/featured-events", null, null, String.class)
-                .getStatusCode()).isEqualTo(HttpStatus.NOT_IMPLEMENTED);
+                .getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(exchange(HttpMethod.GET, "/public/trending-events", null, null, String.class)
-                .getStatusCode()).isEqualTo(HttpStatus.NOT_IMPLEMENTED);
+                .getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
     // ---- the vocabulary itself (criteria 12 and 13) ----
