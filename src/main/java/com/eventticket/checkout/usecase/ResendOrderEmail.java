@@ -1,7 +1,7 @@
 package com.eventticket.checkout.usecase;
 
 import com.eventticket.event.repository.EventRepository;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import com.eventticket.shared.email.EmailSender;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.error.ErrorCodes;

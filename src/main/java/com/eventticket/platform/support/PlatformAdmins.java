@@ -2,7 +2,7 @@ package com.eventticket.platform.support;
 
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.shared.tenancy.TenantContext;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

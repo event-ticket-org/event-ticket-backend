@@ -30,8 +30,27 @@ com.eventticket.<feature>
 └── support/      feature-local infrastructure, where a feature needs any
 ```
 
-`shared/` is subdivided by capability instead: `audit/`, `email/`, `error/`, `money/`,
-`page/`, `tenancy/`. The bar for adding to `shared` is that **every** feature needs it.
+`shared/` is subdivided by capability instead: `audit/`, `directory/`, `email/`, `error/`,
+`money/`, `page/`, `persistence/`, `storage/`, `tenancy/`. The bar for adding to `shared` is that
+**every** feature needs it.
+
+**A capability with more than a handful of classes is grouped by the part of itself it belongs
+to**, because the capability name stops being enough to find anything:
+
+```
+email/       EmailSender            the port every feature calls
+             outbox/                the durable record and its retry
+             transport/             how a message actually leaves
+persistence/ routing/               which node a query goes to
+             freshness/             whether the replica has caught up
+storage/     StorageProperties      configuration
+             object/                the store, its port and what goes in it
+             image/                 turning an upload into renderings
+```
+
+`directory/` holds `UserDirectory`, which is the port `organization` reaches people through so
+that it and `identity` never become mutually dependent. It sat on the module root for a while,
+which made `shared` the only module breaking the rule at the top of this section.
 
 A use case is a class named after the action — `PublishEvent`, `CreateSeatHold`, `ScanTicket`
 — with a method named for the domain verb. Every endpoint gets one, reads included;

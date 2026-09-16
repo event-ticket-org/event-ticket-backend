@@ -12,7 +12,7 @@ import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.email.EmailSender;
 import com.eventticket.shared.money.Money;
 import com.eventticket.shared.tenancy.TenantPublisher;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.UserDirectory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;

@@ -1,6 +1,6 @@
 package com.eventticket.shared.tenancy;
 
-import com.eventticket.shared.persistence.LastWriteStore;
+import com.eventticket.shared.persistence.freshness.LastWriteStore;
 import jakarta.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.ObjectProvider;

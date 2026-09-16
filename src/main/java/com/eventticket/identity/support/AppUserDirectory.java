@@ -1,7 +1,7 @@
 package com.eventticket.identity.support;
 
-import com.eventticket.shared.DirectoryUser;
-import com.eventticket.shared.UserDirectory;
+import com.eventticket.shared.directory.DirectoryUser;
+import com.eventticket.shared.directory.UserDirectory;
 import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;

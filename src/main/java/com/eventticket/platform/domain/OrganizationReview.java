@@ -1,7 +1,7 @@
 package com.eventticket.platform.domain;
 
 import com.eventticket.organization.domain.Organization;
-import com.eventticket.shared.DirectoryUser;
+import com.eventticket.shared.directory.DirectoryUser;
 import java.util.List;
 
 /**
