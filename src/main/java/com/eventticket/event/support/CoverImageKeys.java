@@ -1,4 +1,4 @@
-package com.eventticket.event.usecase;
+package com.eventticket.event.support;
 
 import java.util.UUID;
 
@@ -14,7 +14,7 @@ import java.util.UUID;
  * <p>The upload id stays in the served key so that replacing a cover changes its URL. Caches
  * are then correct by construction rather than by a header somebody has to remember to set.
  */
-final class CoverImageKeys {
+public final class CoverImageKeys {
 
     /** Everything here is expired by a lifecycle rule; see compose.yaml and ADR-0006. */
     private static final String PENDING = "pending";
@@ -22,11 +22,11 @@ final class CoverImageKeys {
 
     private CoverImageKeys() {}
 
-    static String pending(UUID organizationId, UUID eventId, String uploadId) {
+    public    static String pending(UUID organizationId, UUID eventId, String uploadId) {
         return "%s/%s/%s/%s".formatted(PENDING, organizationId, eventId, uploadId);
     }
 
-    static String served(UUID organizationId, UUID eventId, String uploadId, String extension) {
+    public    static String served(UUID organizationId, UUID eventId, String uploadId, String extension) {
         return "%s/%s/%s/%s.%s".formatted(SERVED, organizationId, eventId, uploadId, extension);
     }
 
@@ -38,7 +38,7 @@ final class CoverImageKeys {
      * back as JPEG. That is also why the key is stored on the Event instead of rebuilt here
      * when it is needed: nothing the Event knows says what a rendering was written as.
      */
-    static String rendering(UUID organizationId, UUID eventId, String uploadId, int width,
+    public    static String rendering(UUID organizationId, UUID eventId, String uploadId, int width,
                             String extension) {
         return "%s/%s/%s/%s-%d.%s".formatted(SERVED, organizationId, eventId, uploadId, width,
                 extension);
@@ -49,7 +49,7 @@ final class CoverImageKeys {
      * before it is concatenated into one. A caller sending {@code ../} is trying to write
      * somewhere else in the bucket.
      */
-    static boolean isWellFormed(String uploadId) {
+    public    static boolean isWellFormed(String uploadId) {
         return uploadId != null && uploadId.matches("[A-Za-z0-9-]{1,64}");
     }
 }

@@ -1,5 +1,6 @@
-package com.eventticket;
+package com.eventticket.architecture;
 
+import com.eventticket.BackendApplication;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
 import org.junit.jupiter.api.Test;

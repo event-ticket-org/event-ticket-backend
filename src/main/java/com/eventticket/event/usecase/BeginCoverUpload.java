@@ -1,5 +1,7 @@
 package com.eventticket.event.usecase;
 
+import com.eventticket.event.support.CoverImageKeys;
+
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.organization.domain.Managers;

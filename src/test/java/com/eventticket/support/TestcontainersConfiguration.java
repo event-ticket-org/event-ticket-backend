@@ -1,4 +1,4 @@
-package com.eventticket;
+package com.eventticket.support;
 
 import java.net.URI;
 import java.net.http.HttpClient;

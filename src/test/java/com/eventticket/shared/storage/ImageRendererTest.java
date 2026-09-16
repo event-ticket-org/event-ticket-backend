@@ -1,9 +1,7 @@
-package com.eventticket.shared;
+package com.eventticket.shared.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.eventticket.shared.storage.ImageRenderer;
-import com.eventticket.shared.storage.ImageType;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;

@@ -2,7 +2,6 @@ package com.eventticket.support;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.eventticket.TestcontainersConfiguration;
 import com.eventticket.api.model.CheckoutRequest;
 import com.eventticket.api.model.CreateOrganizationRequest;
 import com.eventticket.api.model.EventSeatMap;

@@ -1,4 +1,4 @@
-package com.eventticket;
+package com.eventticket.architecture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

@@ -358,6 +358,26 @@ auto-configuration registers a bean of that name and a second one stops the app 
 Integration tests run against real Postgres via Testcontainers. `ApiTest` drives the app over
 HTTP; extend it.
 
+**Where a test file goes follows from what it exercises**, and the two cases are different:
+
+```
+src/test/java/com/eventticket/
+├── architecture/   the shape of the code, not its behaviour - ModularityTest,
+│                   DeploymentConfigurationTest
+├── support/        everything a test needs and nothing a test asserts - ApiTest,
+│                   TestcontainersConfiguration, TestBackendApplication, fakes, fixtures
+├── <feature>/      behaviour a person can describe: EventLifecycleTest, BuyingTicketsTest
+└── <feature>/<sub-package>/   a test of one class, mirroring where that class lives
+```
+
+A test that exercises a **user-visible behaviour** sits at the feature root and is named for the
+behaviour - `BuyingTicketsTest`, not `BeginCheckoutTest`. A test that exercises **one class**
+mirrors that class's package: `Lsn` is in `shared/persistence`, so `LsnTest` is too.
+
+The rule was already being followed almost everywhere and had never been written down, which is
+exactly how `ImageRendererTest` came to sit in `shared/` while `ImageRenderer` lived in
+`shared/storage`. An unwritten convention is one nobody can be wrong about on purpose.
+
 **A tenancy test that goes through a tenant-filtered repository method is vacuous.**
 `ListMembers` filters by organization in its own query, so tests through it pass with RLS
 switched off entirely — three did. Prove isolation by counting the table with **no**

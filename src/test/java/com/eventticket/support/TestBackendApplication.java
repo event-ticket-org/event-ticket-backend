@@ -1,5 +1,6 @@
-package com.eventticket;
+package com.eventticket.support;
 
+import com.eventticket.BackendApplication;
 import org.springframework.boot.SpringApplication;
 
 public class TestBackendApplication {
