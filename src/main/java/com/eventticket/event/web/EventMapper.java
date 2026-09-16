@@ -30,8 +30,9 @@ final class EventMapper {
     static com.eventticket.api.model.Event toDto(EventDetail detail) {
         Event event = detail.event();
         var dto = new com.eventticket.api.model.Event(event.title(), event.venueId(),
-                at(event.startsAt()), event.id(), event.organizationId(),
-                EventStatus.fromValue(event.status().name()));
+                event.category().slug(), at(event.startsAt()), event.id(),
+                event.organizationId(), EventStatus.fromValue(event.status().name()));
+        dto.setCategoryName(event.category().name());
         dto.setDescription(event.description());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
@@ -65,7 +66,8 @@ final class EventMapper {
     static PublicEvent toPublicDto(PublicEventView view) {
         Event event = view.event();
         var dto = new PublicEvent(event.id(), event.title(), view.organizationName(),
-                view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
+                view.venueName(), view.city(), view.citySlug(), view.categorySlug(),
+                view.categoryName(), at(event.startsAt()), view.timezone(),
                 (int) view.seatsTotal(), (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
@@ -82,7 +84,8 @@ final class EventMapper {
     static PublicEventSummary toSummaryDto(PublicEventView view) {
         Event event = view.event();
         var dto = new PublicEventSummary(event.id(), event.title(), view.organizationName(),
-                view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
+                view.venueName(), view.city(), view.citySlug(), view.categorySlug(),
+                view.categoryName(), at(event.startsAt()), view.timezone(),
                 (int) view.seatsTotal(), (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());

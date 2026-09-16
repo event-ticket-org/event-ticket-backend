@@ -2,6 +2,7 @@ package com.eventticket.event;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.eventticket.api.model.Error;
 import com.eventticket.api.model.Event;
 import com.eventticket.api.model.Order;
 import com.eventticket.api.model.PublicEventPage;
@@ -21,9 +22,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 /**
- * requirements/009 criteria 3, 4, 5 and 11 - the two things the listing gained.
+ * requirements/009 criteria 3, 4, 5, 11, 12, 17 and 18.
  *
  * <p>Separate from {@link EventLifecycleTest}, which owns what the listing <em>contains</em>.
  * This owns what it can be asked and what it says about each entry.
@@ -75,15 +77,20 @@ class EventDiscoveryTest extends ApiTest {
     }
 
     /**
-     * requirements/009 criterion 5, which is the reason this endpoint takes a filter and not a
-     * search.
+     * requirements/009 criterion 5: start time is the default ordering, and the only one
+     * available without a text query.
      *
      * <p>"Rock" is an exact title and starts later; "Rock and Roll Revival" merely contains the
      * word and starts sooner. Every relevance scheme ever written puts the exact match first.
-     * This must not: the order is the order events happen in, and nothing else.
+     * The default must not: asking for a match narrows the listing and never reorders it.
+     *
+     * <p>This test used to exist because the listing had no other ordering at all. It now exists
+     * because the other one has to be asked for - the more useful assertion of the two, since a
+     * relevance implementation leaking into the default would have passed the old version by
+     * accident.
      */
     @Test
-    @DisplayName("a match never changes the order - the soonest event is still first")
+    @DisplayName("a match never changes the default order - the soonest event is still first")
     void matchingDoesNotReorder() {
         TokenPair manager = approvedManager();
         Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
@@ -120,9 +127,186 @@ class EventDiscoveryTest extends ApiTest {
         Venue saigon = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
         publish(manager, saigon, "Live in Saigon", NEXT_MONTH);
 
-        assertThat(listing(Map.of("q", "live", "city", "Ho Chi Minh City"))).hasSize(1);
-        assertThat(listing(Map.of("q", "live", "city", "Da Nang"))).isEmpty();
-        assertThat(listing(Map.of("q", "nothing", "city", "Ho Chi Minh City"))).isEmpty();
+        assertThat(listing(Map.of("q", "live", "citySlug", "tp-ho-chi-minh"))).hasSize(1);
+        assertThat(listing(Map.of("q", "live", "citySlug", "da-nang"))).isEmpty();
+        assertThat(listing(Map.of("q", "nothing", "citySlug", "tp-ho-chi-minh"))).isEmpty();
+    }
+
+    // ---- the Category taxonomy (criteria 12 and 17) ----
+
+    @Test
+    @DisplayName("the listing filters by category, and composes with everything else")
+    void theCategoryFilterNarrows() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        publish(manager, venue, "Live in Saigon", "nhac-song", NEXT_MONTH);
+        publish(manager, venue, "Hamlet", "san-khau-nghe-thuat", NEXT_MONTH);
+
+        assertThat(titles(listing(Map.of("categorySlug", "nhac-song"))))
+                .containsExactly("Live in Saigon");
+        assertThat(titles(listing(Map.of("categorySlug", "san-khau-nghe-thuat"))))
+                .containsExactly("Hamlet");
+        assertThat(listing(Map.of("categorySlug", "the-thao"))).isEmpty();
+        assertThat(listing(Map.of("categorySlug", "nhac-song", "q", "hamlet"))).isEmpty();
+    }
+
+    /**
+     * The application cannot extend the taxonomy - V14 revokes the writes - so the only way to
+     * reach an unknown Category is to name one, and the answer says which set to choose from.
+     * A foreign key violation would reach the caller as "the request could not be completed",
+     * which is true of a database error and useless to somebody who mistyped.
+     */
+    @Test
+    @DisplayName("a category nobody defined is refused by name, not by foreign key")
+    void anUnknownCategoryIsRefused() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+
+        var input = new com.eventticket.api.model.EventInput("Unfiled", venue.getId(),
+                "not-a-category", NEXT_MONTH);
+        ResponseEntity<Error> refused =
+                exchange(HttpMethod.POST, "/events", manager, input, Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(refused.getBody().getMessage()).contains("/public/categories");
+    }
+
+    /**
+     * Criterion 17. The counts are taken under the other filters and <em>without</em> the
+     * category filter - the number a visitor is choosing between, not the number of the page
+     * they are already on.
+     *
+     * <p>The zero is the half worth asserting. A Category shown greyed with a zero beside it
+     * tells a visitor their other filters emptied it; one missing from the array reads as one
+     * that does not exist, and a GROUP BY produces exactly that missing row unless something
+     * fills it in.
+     */
+    @Test
+    @DisplayName("facet counts cover every category, including the ones matching nothing")
+    void facetsCountEveryCategory() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        publish(manager, venue, "Facet Music One", "nhac-song", NEXT_MONTH);
+        publish(manager, venue, "Facet Music Two", "nhac-song", NEXT_MONTH.plusDays(1));
+        publish(manager, venue, "Facet Play", "san-khau-nghe-thuat", NEXT_MONTH);
+
+        Map<String, Integer> counts = facetsOf(Map.of("q", "facet"));
+
+        assertThat(counts).containsEntry("nhac-song", 2)
+                .containsEntry("san-khau-nghe-thuat", 1)
+                .containsEntry("the-thao", 0)
+                .containsEntry("khac", 0);
+        // Every Category, so a client draws the whole strip from one response.
+        assertThat(counts).hasSize(6);
+    }
+
+    /**
+     * The counts ignore the category filter and nothing else. Narrowing to one Category must
+     * leave the other counts exactly where they were, or the strip collapses to a single
+     * non-zero number the moment somebody uses it - and there is then no way back.
+     */
+    @Test
+    @DisplayName("choosing a category does not change the counts beside it")
+    void facetsIgnoreTheCategoryFilterOnly() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        publish(manager, venue, "Sticky Music", "nhac-song", NEXT_MONTH);
+        publish(manager, venue, "Sticky Play", "san-khau-nghe-thuat", NEXT_MONTH);
+
+        Map<String, Integer> unfiltered = facetsOf(Map.of("q", "sticky"));
+        Map<String, Integer> narrowed =
+                facetsOf(Map.of("q", "sticky", "categorySlug", "nhac-song"));
+
+        assertThat(narrowed).isEqualTo(unfiltered);
+        assertThat(narrowed).containsEntry("san-khau-nghe-thuat", 1);
+    }
+
+    // ---- what the text query covers (criterion 18) ----
+
+    /**
+     * Criterion 18 widened the query from the title to four fields. Only the title is indexed,
+     * which is a performance decision rather than a behavioural one - a description has to
+     * match either way, and this is what says so.
+     */
+    @Test
+    @DisplayName("the query matches the description, the venue and the organizer, not only the title")
+    void theQuerySpansFourFields() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        Event event = publish(manager, venue, "Untitled Evening", NEXT_MONTH);
+
+        var patch = new com.eventticket.api.model.EventPatch();
+        patch.setDescription("An evening of xylophone music");
+        exchange(HttpMethod.PATCH, "/events/" + event.getId(), manager, patch, Event.class);
+
+        assertThat(titles(search("xylophone"))).containsExactly("Untitled Evening");
+        // The Venue's name and the Organization's name, neither of which is on the Event.
+        assertThat(titles(search("Hoa Binh"))).contains("Untitled Evening");
+        assertThat(titles(search("Acme"))).contains("Untitled Evening");
+    }
+
+    // ---- the second ordering, and what is not built yet (criterion 5) ----
+
+    /**
+     * Criterion 5 gives the listing two orderings and says a client asks for one rather than
+     * inferring which it got. Nothing can compute relevance yet, so a refusal is the honest
+     * answer: ordering chronologically would satisfy the request and lose the information that
+     * it was not honoured.
+     */
+    @Test
+    @DisplayName("relevance ordering is refused rather than quietly downgraded")
+    void relevanceIsRefusedWhileItDoesNotExist() {
+        ResponseEntity<Error> refused = exchange(HttpMethod.GET,
+                "/public/events?sort=RELEVANCE&q={q}", null, null, Error.class,
+                Map.of("q", "anything"));
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(refused.getBody().getMessage()).contains("not available yet");
+    }
+
+    @Test
+    @DisplayName("relevance to nothing is refused as the contradiction it is")
+    void relevanceNeedsSomethingToBeRelevantTo() {
+        ResponseEntity<Error> refused = exchange(HttpMethod.GET,
+                "/public/events?sort=RELEVANCE", null, null, Error.class);
+
+        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(refused.getBody().getMessage()).contains("Send a search term");
+    }
+
+    /**
+     * The curated and ranked rows are in the contract and not yet built. 501 rather than an
+     * empty array, because an empty array is an answer - it says nothing is featured today, and
+     * a client would draw a row and find it bare.
+     *
+     * <p>This test is the reminder. The day either is implemented it fails and says so.
+     */
+    @Test
+    @DisplayName("the rows not built yet say so, rather than saying they are empty")
+    void theRowsNotBuiltYetSaySo() {
+        assertThat(exchange(HttpMethod.GET, "/public/featured-events", null, null, String.class)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_IMPLEMENTED);
+        assertThat(exchange(HttpMethod.GET, "/public/trending-events", null, null, String.class)
+                .getStatusCode()).isEqualTo(HttpStatus.NOT_IMPLEMENTED);
+    }
+
+    // ---- the vocabulary itself (criteria 12 and 13) ----
+
+    @Test
+    @DisplayName("the category and city sets are readable without an account")
+    void theVocabularyIsPublic() {
+        var categories = exchange(HttpMethod.GET, "/public/categories", null, null,
+                com.eventticket.api.model.Category[].class).getBody();
+        var cities = exchange(HttpMethod.GET, "/public/cities", null, null,
+                com.eventticket.api.model.City[].class).getBody();
+
+        assertThat(categories).extracting(com.eventticket.api.model.Category::getSlug)
+                .containsExactly("nhac-song", "san-khau-nghe-thuat", "the-thao",
+                        "hoi-thao-workshop", "tham-quan-trai-nghiem", "khac");
+        // Vietnamese display names, which is why the name is a column rather than an enum value.
+        assertThat(categories[0].getName()).isEqualTo("Nhạc sống");
+        assertThat(cities).extracting(com.eventticket.api.model.City::getSlug)
+                .contains("ha-noi", "tp-ho-chi-minh", "da-nang");
     }
 
     // ---- how many seats are left (criteria 3 and 11) ----
@@ -248,6 +432,27 @@ class EventDiscoveryTest extends ApiTest {
                 com.eventticket.api.model.PublicEvent.class).getBody();
     }
 
+    private Map<String, Integer> facetsOf(Map<String, String> parameters) {
+        var ordered = new LinkedHashMap<>(parameters);
+        String path = "/public/events?"
+                + String.join("&", ordered.keySet().stream().map(k -> k + "={" + k + "}").toList());
+        var facets = exchange(HttpMethod.GET, path, null, null, PublicEventPage.class, ordered)
+                .getBody().getCategoryFacets();
+        var counts = new LinkedHashMap<String, Integer>();
+        facets.forEach(facet -> counts.put(facet.getSlug(), facet.getCount()));
+        return counts;
+    }
+
+    private Event publish(TokenPair manager, Venue venue, String title, String categorySlug,
+                          OffsetDateTime startsAt) {
+        Event event = createEvent(manager, venue.getId(), title, categorySlug, startsAt,
+                startsAt.minusHours(1), startsAt.plusHours(4));
+        priceTier(manager, event.getId(), "Standard", 250_000);
+        var published = publish(manager, event.getId(), Event.class);
+        assertThat(published.getStatusCode()).isEqualTo(HttpStatus.OK);
+        return published.getBody();
+    }
+
     private Event publish(TokenPair manager, Venue venue, String title, OffsetDateTime startsAt) {
         Event event = createEvent(manager, venue.getId(), title, startsAt);
         priceTier(manager, event.getId(), "Standard", 250_000);
@@ -257,7 +462,7 @@ class EventDiscoveryTest extends ApiTest {
     }
 
     private Venue venueWithSeats(TokenPair manager, SeatMap map) {
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(manager, venue.getId(), map);
         return venue;
     }

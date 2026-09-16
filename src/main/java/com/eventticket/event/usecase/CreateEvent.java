@@ -4,6 +4,7 @@ import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventDetail;
 import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PricingTier;
+import com.eventticket.event.repository.EventCategoryRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.PricingTierRepository;
 import com.eventticket.organization.domain.Managers;
@@ -34,18 +35,20 @@ public class CreateEvent {
     private final EventRepository events;
     private final PricingTierRepository tiers;
     private final VenueRepository venues;
+    private final EventCategoryRepository categories;
     private final Managers managers;
 
     public CreateEvent(EventRepository events, PricingTierRepository tiers,
-                VenueRepository venues, Managers managers) {
+                VenueRepository venues, EventCategoryRepository categories, Managers managers) {
         this.events = events;
         this.tiers = tiers;
         this.venues = venues;
+        this.categories = categories;
         this.managers = managers;
     }
 
     @Transactional
-    public EventDetail create(String title, String description,
+    public EventDetail create(String title, String description, String categorySlug,
                               UUID venueId, Instant startsAt, Instant doorsOpenAt,
                               Instant endsAt, boolean listed) {
         UUID organizationId = TenantContext.requireOrganizationId();
@@ -56,7 +59,7 @@ public class CreateEvent {
                 .seatMap();
 
         Event event = events.save(new Event(organizationId, venueId, title, description,
-                startsAt, doorsOpenAt, endsAt, listed));
+                categories.findOrThrow(categorySlug), startsAt, doorsOpenAt, endsAt, listed));
 
         List<PricingTier> created = tiers.saveAll(map.tierNames().stream()
                 .map(name -> new PricingTier(organizationId, event.id(), name))

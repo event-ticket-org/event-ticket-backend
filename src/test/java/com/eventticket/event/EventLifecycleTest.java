@@ -125,7 +125,7 @@ class EventLifecycleTest extends ApiTest {
     @DisplayName("publishing is refused when the venue has no seats")
     void emptySeatMapCannotPublish() {
         TokenPair manager = approvedManager();
-        Venue venue = createVenue(manager, "Empty Room", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Empty Room", "tp-ho-chi-minh");
         Event event = createEvent(manager, venue.getId(), "Live in Saigon", NEXT_MONTH);
 
         ResponseEntity<Error> refused = publish(manager, event.getId(), Error.class);
@@ -232,7 +232,7 @@ class EventLifecycleTest extends ApiTest {
         Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
         OffsetDateTime lastWeek = OffsetDateTime.now().minus(7, ChronoUnit.DAYS);
 
-        var input = new com.eventticket.api.model.EventInput("Last Tuesday", venue.getId(), lastWeek);
+        var input = new com.eventticket.api.model.EventInput("Last Tuesday", venue.getId(), A_CATEGORY, lastWeek);
         input.setDoorsOpenAt(lastWeek.minusHours(1));
         input.setEndsAt(lastWeek.plusHours(3));
         Event draft = exchange(HttpMethod.POST, "/events", manager, input, Event.class).getBody();
@@ -331,7 +331,7 @@ class EventLifecycleTest extends ApiTest {
         Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
 
         // Built by hand: the shared fixture sets a window, and this is the test that must not.
-        var input = new com.eventticket.api.model.EventInput("Live in Saigon", venue.getId(), NEXT_MONTH);
+        var input = new com.eventticket.api.model.EventInput("Live in Saigon", venue.getId(), A_CATEGORY, NEXT_MONTH);
         Event event = exchange(HttpMethod.POST, "/events", manager, input, Event.class).getBody();
         priceTier(manager, event.getId(), "Standard", 250_000);
 
@@ -413,7 +413,9 @@ class EventLifecycleTest extends ApiTest {
         assertThat(page.getTitle()).isEqualTo("Live in Saigon");
         assertThat(page.getOrganizationName()).isEqualTo("Acme Events");
         assertThat(page.getVenueName()).isEqualTo("Hoa Binh Theatre");
-        assertThat(page.getCity()).isEqualTo("Ho Chi Minh City");
+        // The name, for printing, beside the slug a client filters by.
+        assertThat(page.getCity()).isEqualTo("TP Hồ Chí Minh");
+        assertThat(page.getCitySlug()).isEqualTo("tp-ho-chi-minh");
         assertThat(page.getTimezone()).isEqualTo("Asia/Ho_Chi_Minh");
         assertThat(page.getPriceFrom().getAmount()).isEqualTo(250_000);
 
@@ -428,14 +430,14 @@ class EventLifecycleTest extends ApiTest {
         Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
         Event event = publishedEvent(manager, venue, "Live in Saigon");
 
-        assertThat(publicListing("Ho Chi Minh City")).extracting(e -> e.getTitle())
+        assertThat(publicListing("tp-ho-chi-minh")).extracting(e -> e.getTitle())
                 .contains("Live in Saigon");
 
         EventPatch unlist = new EventPatch();
         unlist.setListed(false);
         exchange(HttpMethod.PATCH, "/events/" + event.getId(), manager, unlist, Event.class);
 
-        assertThat(publicListing("Ho Chi Minh City")).isEmpty();
+        assertThat(publicListing("tp-ho-chi-minh")).isEmpty();
         assertThat(exchange(HttpMethod.GET, "/public/events/" + event.getId(), null, null,
                 PublicEvent.class).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
@@ -447,8 +449,8 @@ class EventLifecycleTest extends ApiTest {
         Venue saigon = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
         publishedEvent(manager, saigon, "Live in Saigon");
 
-        assertThat(publicListing("Ho Chi Minh City")).hasSize(1);
-        assertThat(publicListing("Da Nang")).isEmpty();
+        assertThat(publicListing("tp-ho-chi-minh")).hasSize(1);
+        assertThat(publicListing("da-nang")).isEmpty();
         assertThat(publicListing(null)).hasSize(1);
     }
 
@@ -473,7 +475,7 @@ class EventLifecycleTest extends ApiTest {
         // requirements/009 criterion 10. Both were published once, and "has ever been
         // published" is not the question the listing is asking.
         assertThat(publicListing(null)).isEmpty();
-        assertThat(publicListing("Ho Chi Minh City")).isEmpty();
+        assertThat(publicListing("tp-ho-chi-minh")).isEmpty();
 
         // Criterion 9: an existing link never breaks because the event's status changed. A
         // buyer holding a ticket for a cancelled show is exactly who follows one.
@@ -483,11 +485,11 @@ class EventLifecycleTest extends ApiTest {
                 PublicEvent.class).getStatusCode()).isEqualTo(HttpStatus.OK);
     }
 
-    private java.util.List<com.eventticket.api.model.PublicEventSummary> publicListing(String city) {
-        String path = city == null ? "/public/events" : "/public/events?city={city}";
+    private java.util.List<com.eventticket.api.model.PublicEventSummary> publicListing(String citySlug) {
+        String path = citySlug == null ? "/public/events" : "/public/events?citySlug={citySlug}";
         return exchange(HttpMethod.GET, path, null, null,
                 com.eventticket.api.model.PublicEventPage.class,
-                city == null ? java.util.Map.of() : java.util.Map.of("city", city))
+                citySlug == null ? java.util.Map.of() : java.util.Map.of("citySlug", citySlug))
                 .getBody().getItems();
     }
 
@@ -500,7 +502,7 @@ class EventLifecycleTest extends ApiTest {
     }
 
     private Venue venueWithSeats(TokenPair manager, SeatMap map) {
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(manager, venue.getId(), map);
         return venue;
     }

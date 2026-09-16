@@ -348,7 +348,7 @@ class RefundsAndCancellationTest extends ApiTest {
     @DisplayName("a draft event has nothing to cancel and says so")
     void cancellingADraftIsRefused() {
         Organizer organizer = organizer();
-        Venue venue = createVenue(organizer.manager(), "Second Room", "Ho Chi Minh City");
+        Venue venue = createVenue(organizer.manager(), "Second Room", "tp-ho-chi-minh");
         putSeatMap(organizer.manager(), venue.getId(), SeatMaps.block("Standard", 1, 2));
         Event draft = createEvent(organizer.manager(), venue.getId(), "Still Cooking", NEXT_MONTH);
 
@@ -467,7 +467,7 @@ class RefundsAndCancellationTest extends ApiTest {
         approve(organization);
         TokenPair manager = switchTo(alice, organization);
 
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(manager, venue.getId(), SeatMaps.block("Standard", 2, 5));
         Event event = createEvent(manager, venue.getId(), "Live in Saigon", startsAt,
                 startsAt.minus(1, ChronoUnit.HOURS), startsAt.plus(3, ChronoUnit.HOURS));

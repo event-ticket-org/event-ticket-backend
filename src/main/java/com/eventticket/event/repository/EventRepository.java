@@ -52,6 +52,22 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
      * timestamp exactly where it was, so an event nobody can buy a ticket for would sit in the
      * listing until it started (criterion 10). The public *page* asks the other question
      * deliberately - a link to a cancelled show must still open (criterion 9).
+     *
+     * <p><strong>One query where there were two.</strong> The city used to be applied by
+     * looking up venue ids first and passing an IN list, because a city is a property of the
+     * Venue. It is now an {@code exists} with the same widest-value idiom as every other filter
+     * here - an absent city is {@code %} - which removes the second query shape and the empty
+     * IN list that had to be special-cased around it.
+     *
+     * <p><strong>The text filter spans four fields</strong> (criterion 18), and only the first
+     * of them is indexed. {@code event_title_trgm_idx} covers the title; a description, a Venue
+     * name and an Organization name each matched by a leading wildcard are scans. Indexing all
+     * four is four GIN indexes on a table that is written far more often than this listing is
+     * read, and the benchmark is what should decide that rather than a guess made here.
+     *
+     * <p>{@code immutable_unaccent}, not {@code unaccent}: they compute the same answer, and
+     * only the first one can be an index expression. Calling the STABLE form here would leave
+     * the index V14 created unused and nothing would say so.
      */
     @Query("""
            select e from Event e
@@ -60,8 +76,19 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
              and e.startsAt > :now
              and e.startsAt >= :startsAfter
              and e.startsAt <= :startsBefore
-             and lower(function('unaccent', e.title))
-                 like lower(function('unaccent', :title)) escape '\\'
+             and e.category.slug like :categorySlug
+             and exists (select 1 from Venue v where v.id = e.venueId
+                           and v.city.slug like :citySlug)
+             and (lower(function('immutable_unaccent', e.title))
+                      like lower(function('immutable_unaccent', :q)) escape '\\'
+                  or lower(function('immutable_unaccent', e.description))
+                      like lower(function('immutable_unaccent', :q)) escape '\\'
+                  or exists (select 1 from Venue vq where vq.id = e.venueId
+                               and lower(function('immutable_unaccent', vq.name))
+                                   like lower(function('immutable_unaccent', :q)) escape '\\')
+                  or exists (select 1 from Organization oq where oq.id = e.organizationId
+                               and lower(function('immutable_unaccent', oq.name))
+                                   like lower(function('immutable_unaccent', :q)) escape '\\'))
              and e.organizationId in (select o.id from Organization o where o.status = :approved)
              and (e.startsAt > :cursorAt
                   or (e.startsAt = :cursorAt and e.id > :cursorId))
@@ -72,37 +99,68 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
                                       @Param("approved") Organization.Status approved,
                                       @Param("startsAfter") Instant startsAfter,
                                       @Param("startsBefore") Instant startsBefore,
-                                      @Param("title") String title,
+                                      @Param("categorySlug") String categorySlug,
+                                      @Param("citySlug") String citySlug,
+                                      @Param("q") String q,
                                       @Param("cursorAt") Instant cursorAt,
                                       @Param("cursorId") UUID cursorId,
                                       Pageable page);
 
-    /** The same listing narrowed to a city, which is a property of the Venue rather than the Event. */
+    /**
+     * How many Events each Category would return under the filters already applied, with the
+     * Category filter itself left out (criterion 17).
+     *
+     * <p>Leaving it out is the whole point and is easy to get wrong: counted *with* it, five of
+     * the six numbers are zero and the sixth is the size of the page the visitor is already
+     * looking at. The counts are for the choice, not for the current state.
+     *
+     * <p>The cursor predicate is absent too. A facet count is a property of the listing and not
+     * of a page of it - counting from the cursor onwards would make the numbers shrink as
+     * somebody scrolled.
+     *
+     * <p>Categories matching nothing are missing from this result rather than present with a
+     * zero, because a GROUP BY has no rows to group. {@code ListPublicEvents} fills them in
+     * from the Category set, which is where the zero criterion 17 asks for comes from.
+     */
     @Query("""
-           select e from Event e
-           where e.status = :published
-             and e.listed = true
-             and e.startsAt > :now
-             and e.startsAt >= :startsAfter
-             and e.startsAt <= :startsBefore
-             and lower(function('unaccent', e.title))
-                 like lower(function('unaccent', :title)) escape '\\'
-             and e.venueId in :venueIds
-             and e.organizationId in (select o.id from Organization o where o.status = :approved)
-             and (e.startsAt > :cursorAt
-                  or (e.startsAt = :cursorAt and e.id > :cursorId))
-           order by e.startsAt asc, e.id asc
+           select e.category.slug as slug, e.category.name as name, count(e) as count
+             from Event e
+            where e.status = :published
+              and e.listed = true
+              and e.startsAt > :now
+              and e.startsAt >= :startsAfter
+              and e.startsAt <= :startsBefore
+              and exists (select 1 from Venue v where v.id = e.venueId
+                            and v.city.slug like :citySlug)
+              and (lower(function('immutable_unaccent', e.title))
+                       like lower(function('immutable_unaccent', :q)) escape '\\'
+                   or lower(function('immutable_unaccent', e.description))
+                       like lower(function('immutable_unaccent', :q)) escape '\\'
+                   or exists (select 1 from Venue vq where vq.id = e.venueId
+                                and lower(function('immutable_unaccent', vq.name))
+                                    like lower(function('immutable_unaccent', :q)) escape '\\')
+                   or exists (select 1 from Organization oq where oq.id = e.organizationId
+                                and lower(function('immutable_unaccent', oq.name))
+                                    like lower(function('immutable_unaccent', :q)) escape '\\'))
+              and e.organizationId in (select o.id from Organization o where o.status = :approved)
+            group by e.category.slug, e.category.name
            """)
-    public List<Event> findPublicPageAtVenues(@Param("now") Instant now,
-                                              @Param("published") Event.Status published,
-                                              @Param("approved") Organization.Status approved,
-                                              @Param("venueIds") List<UUID> venueIds,
-                                              @Param("startsAfter") Instant startsAfter,
-                                              @Param("startsBefore") Instant startsBefore,
-                                              @Param("title") String title,
-                                              @Param("cursorAt") Instant cursorAt,
-                                              @Param("cursorId") UUID cursorId,
-                                              Pageable page);
+    public List<CategoryCount> countPublicByCategory(@Param("now") Instant now,
+                                                     @Param("published") Event.Status published,
+                                                     @Param("approved") Organization.Status approved,
+                                                     @Param("startsAfter") Instant startsAfter,
+                                                     @Param("startsBefore") Instant startsBefore,
+                                                     @Param("citySlug") String citySlug,
+                                                     @Param("q") String q);
+
+    /** Projection for {@link #countPublicByCategory}. Spring Data maps by alias. */
+    public interface CategoryCount {
+        String getSlug();
+
+        String getName();
+
+        long getCount();
+    }
 
     /**
      * How many seats each Event has sold, and how many of its Orders are holding money that

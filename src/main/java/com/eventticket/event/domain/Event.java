@@ -9,6 +9,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Map;
@@ -48,6 +50,19 @@ public class Event {
     private String title;
 
     private String description;
+
+    /**
+     * What kind of thing this is (requirements/009 criterion 12). Not nullable, because a
+     * nullable Category means every grouped row grows a branch for the Events that skipped the
+     * question, and they fall out of all of them silently - which is a bug you find months
+     * later by noticing a row is short.
+     *
+     * <p>Eager, like a Venue's City and for the same reason: the mapping to a DTO happens in
+     * the controller, outside this use case's transaction.
+     */
+    @ManyToOne
+    @JoinColumn(name = "category_slug", nullable = false)
+    private EventCategory category;
 
     @Column(name = "cover_image_url")
     private String coverImageUrl;
@@ -119,11 +134,13 @@ public class Event {
     protected Event() {}
 
     public Event(UUID organizationId, UUID venueId, String title, String description,
-                 Instant startsAt, Instant doorsOpenAt, Instant endsAt, boolean listed) {
+                 EventCategory category, Instant startsAt, Instant doorsOpenAt, Instant endsAt,
+                 boolean listed) {
         this.organizationId = organizationId;
         this.venueId = venueId;
         this.title = title;
         this.description = description;
+        this.category = category;
         this.startsAt = startsAt;
         this.doorsOpenAt = doorsOpenAt;
         this.endsAt = endsAt;
@@ -149,6 +166,20 @@ public class Event {
 
     public String description() {
         return description;
+    }
+
+    public EventCategory category() {
+        return category;
+    }
+
+    /**
+     * requirements/003 criterion 8 territory: a Category is a description of the Event, not
+     * something a sold Ticket depends on, so it moves for as long as the Event is editable.
+     * Somebody who filed a comedy night under theatre should be able to say so afterwards.
+     */
+    public void categoriseAs(EventCategory category) {
+        requireStillEditable();
+        this.category = category;
     }
 
     public String coverImageUrl() {

@@ -289,6 +289,51 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Organization' }
 
+  /admin/featured-slots:
+    get:
+      tags: [Platform admin]
+      summary: The curated row, including slots not currently showing
+      description: |
+        Every slot, past, present and scheduled, in position order - which is what an
+        administrator has to see to schedule the next one. `/public/featured-events` shows
+        only what is live now.
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FeaturedSlot' }
+    put:
+      tags: [Platform admin]
+      summary: Replace the curated row
+      description: |
+        The whole row at once, rather than a slot at a time. Position is meaningful and
+        relative, so moving one Event up moves another down - expressing that as a series of
+        single-slot edits means a half-applied reorder is reachable and has no name.
+
+        Recorded with actor and instant like every other administrative decision
+        (requirements/009 criterion 14).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              maxItems: 20
+              items: { $ref: '#/components/schemas/FeaturedSlotInput' }
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: Replaced
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FeaturedSlot' }
+
   /venues:
     get:
       tags: [Venues]
@@ -325,6 +370,7 @@ paths:
       tags: [Venues]
       summary: Read a Venue
       responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
         '200':
           description: OK
           content:
@@ -626,21 +672,39 @@ paths:
       security: []
       summary: Public listing of events across Organizations
       description: |
-        Published, listed Events of approved Organizations that have not yet started, ordered
-        by start time. No ranking, relevance or personalization.
+        Published, listed Events of approved Organizations that have not yet started.
 
-        A sold-out Event still appears. Hiding it would make the listing disagree with what is
-        on, and somebody who missed it is better told so than left wondering.
+        Ordered by start time, or by relevance to `q` when asked for. Never by who is
+        asking - the same request returns the same page in the same order for everybody
+        (requirements/009 criterion 5).
+
+        A sold-out Event still appears, in the place it would have taken with seats left.
+        Hiding it would make the listing disagree with what is on, and reordering by
+        availability would reshuffle the page under a visitor mid-scroll (criterion 21).
       parameters:
         - name: q
           in: query
           description: |
-            Filters by title. A filter and not a search ranking: matching Events are still
-            ordered by start time, which is what keeps requirements/009 criterion 5 true.
-            Matching is case-insensitive and accent-insensitive, so `hanoi` finds `Hà Nội`.
+            Matches the title, description, Venue name and Organization name. Case-insensitive
+            and accent-insensitive in both directions, so `ha noi` finds `Hà Nội` and the
+            title typed exactly as written finds itself (criterion 18).
           schema: { type: string, maxLength: 200 }
-        - name: city
+        - name: sort
           in: query
+          description: |
+            Omitted means `STARTS_AT`. `RELEVANCE` requires `q` and is refused without it -
+            relevance to nothing is not an ordering, and silently falling back would leave a
+            client unable to tell which ordering it got.
+          schema: { $ref: '#/components/schemas/PublicEventSort' }
+        - name: categorySlug
+          in: query
+          schema: { type: string }
+        - name: citySlug
+          in: query
+          description: |
+            A slug from `/public/cities`, not a city's name. The listing counts by city, and
+            two spellings of one city are two cities to anything that counts
+            (criterion 13).
           schema: { type: string }
         - name: startsAfter
           in: query
@@ -672,6 +736,81 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/PublicEvent' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /public/categories:
+    get:
+      tags: [Public]
+      security: []
+      summary: The Category set
+      description: |
+        Platform vocabulary, in display order, including the catch-all. Organizations choose
+        from this set and never extend it (requirements/009 criterion 12).
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Category' }
+
+  /public/cities:
+    get:
+      tags: [Public]
+      security: []
+      summary: The City set
+      description: Cities a Venue may be in, in display order.
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/City' }
+
+  /public/featured-events:
+    get:
+      tags: [Public]
+      security: []
+      summary: The curated row
+      description: |
+        Events a platform administrator has placed, in the order they placed them, limited to
+        those whose period covers now (requirements/009 criterion 14).
+
+        Empty is a normal answer and means the row is not shown. So is a row too short to look
+        curated - criterion 16 applies here, and the decision is the server's rather than
+        something each client re-implements.
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PublicEventSummary' }
+
+  /public/trending-events:
+    get:
+      tags: [Public]
+      security: []
+      summary: The ranked row
+      description: |
+        Ranked by Tickets sold in a recent window and by nothing else (requirements/009
+        criterion 15). Empty when too few Events qualify to look ranked - a chart of two is
+        not a chart.
+      responses:
+        '4XX': { $ref: '#/components/responses/Error4xx' }
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TrendingEvent' }
 
   /public/events/{eventId}/seat-map:
     parameters:
@@ -1228,23 +1367,33 @@ components:
 
     VenueInput:
       type: object
-      required: [name, city, timezone]
+      required: [name, citySlug, timezone]
       properties:
         name: { type: string, maxLength: 200 }
         address: { type: string, maxLength: 500 }
-        city:
+        citySlug:
           type: string
-          maxLength: 100
-          description: A field of its own, because the public listing filters on it
+          description: |
+            A slug from `/public/cities`. It was free text until the listing began grouping
+            and counting by it: filtering tolerates two spellings of one city and returns
+            slightly wrong results, counting reports two cities (requirements/009
+            criterion 13).
         timezone: { type: string, examples: ['Asia/Ho_Chi_Minh'] }
 
     Venue:
       allOf:
         - $ref: '#/components/schemas/VenueInput'
         - type: object
-          required: [id]
+          required: [id, city]
           properties:
             id: { type: string, format: uuid }
+            city:
+              type: string
+              readOnly: true
+              description: |
+                The City's name, for display. Sent back alongside the slug so that drawing a
+                Venue is not a second request, and never accepted on the way in - the set is
+                the platform's.
             seatCount: { type: integer }
 
     SeatMapSeat:
@@ -1325,11 +1474,18 @@ components:
 
     EventInput:
       type: object
-      required: [title, venueId, startsAt]
+      required: [title, venueId, startsAt, categorySlug]
       properties:
         title: { type: string, maxLength: 200 }
         description: { type: string, maxLength: 5000 }
         venueId: { type: string, format: uuid }
+        categorySlug:
+          type: string
+          description: |
+            A slug from `/public/categories`. Required, because a nullable Category means
+            every grouped row grows a branch for the Events that skipped the question, and
+            they fall out of all of them silently. An Event that fits nothing else takes the
+            catch-all, permanently and correctly (requirements/009 criterion 12).
         startsAt: { type: string, format: date-time }
         doorsOpenAt:
           type: [string, 'null']
@@ -1357,6 +1513,7 @@ components:
       properties:
         title: { type: string, maxLength: 200 }
         description: { type: string, maxLength: 5000 }
+        categorySlug: { type: string }
         coverImageAlt: { type: [string, 'null'], maxLength: 200 }
         startsAt: { type: string, format: date-time }
         doorsOpenAt: { type: string, format: date-time }
@@ -1374,6 +1531,10 @@ components:
           properties:
             id: { type: string, format: uuid }
             organizationId: { type: string, format: uuid }
+            categoryName:
+              type: string
+              readOnly: true
+              description: The Category's name, for display beside the slug it came from.
             status: { $ref: '#/components/schemas/EventStatus' }
             coverImageUrl:
               type: [string, 'null']
@@ -1416,16 +1577,109 @@ components:
               type: integer
               description: Ticket holders notified by the request that produced this response
 
+    PublicEventSort:
+      type: string
+      enum: [STARTS_AT, RELEVANCE]
+      default: STARTS_AT
+      description: |
+        The two orderings the listing has (requirements/009 criterion 5). There is no third,
+        and neither depends on who is asking.
+
+    Category:
+      type: object
+      required: [slug, name]
+      properties:
+        slug:
+          type: string
+          description: |
+            Stable and language-free, because it is what a client sends back and what a URL
+            carries. The name is neither.
+        name:
+          type: string
+          description: |
+            As shown to a visitor, in the market's own language. It lives here rather than in
+            an enum so that renaming a Category, or adding one, is a data change instead of a
+            contract revision and a coordinated deploy.
+
+    City:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+
+    CategoryFacet:
+      type: object
+      required: [slug, name, count]
+      properties:
+        slug: { type: string }
+        name: { type: string }
+        count:
+          type: integer
+          minimum: 0
+          description: |
+            Events this Category would return. Zero is meaningful and is sent: a Category
+            shown greyed with a zero beside it tells a visitor their other filters are what
+            emptied it, where a Category silently missing from the list reads as one that
+            does not exist.
+
+    TrendingEvent:
+      type: object
+      required: [rank, event]
+      properties:
+        rank:
+          type: integer
+          minimum: 1
+          description: Position in the row, from 1. Shown to the visitor, because a chart that hides its own order is a list.
+        event: { $ref: '#/components/schemas/PublicEventSummary' }
+
+    FeaturedSlotInput:
+      type: object
+      required: [eventId, startsAt, endsAt]
+      properties:
+        eventId: { type: string, format: uuid }
+        startsAt: { type: string, format: date-time }
+        endsAt:
+          type: string
+          format: date-time
+          description: |
+            When the slot stops showing. Required rather than optional, so that every
+            placement has an end somebody chose. A curated row with no expiry becomes a row
+            nobody revisits, and the Events in it are still there long after the reason was.
+
+    FeaturedSlot:
+      allOf:
+        - $ref: '#/components/schemas/FeaturedSlotInput'
+        - type: object
+          required: [id, position, event]
+          properties:
+            id: { type: string, format: uuid }
+            position:
+              type: integer
+              minimum: 1
+              description: Order within the row, assigned from the order the slots were sent in.
+            event: { $ref: '#/components/schemas/PublicEventSummary' }
+
     PublicEventSummary:
       type: object
-      required: [id, title, organizationName, venueName, city, startsAt, timezone,
-                 seatsTotal, seatsAvailable]
+      required: [id, title, organizationName, venueName, city, citySlug, categorySlug,
+                 categoryName, startsAt, timezone, seatsTotal, seatsAvailable]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
         organizationName: { type: string }
         venueName: { type: string }
-        city: { type: string }
+        city:
+          type: string
+          description: The City's name, as it is written on the card.
+        citySlug:
+          type: string
+          description: |
+            The same City as a slug, which is what a client sends back to filter by it. Both,
+            because a card shows one and links to the other, and deriving either from the
+            other is a lookup a client should not have to hold.
+        categorySlug: { type: string }
+        categoryName: { type: string }
         startsAt: { type: string, format: date-time }
         timezone: { type: string }
         coverImageUrl:
@@ -1828,6 +2082,18 @@ components:
             items:
               type: array
               items: { $ref: '#/components/schemas/PublicEventSummary' }
+            categoryFacets:
+              type: array
+              description: |
+                How many Events each Category would return under the filters already applied,
+                minus the Category filter itself - which is the count a visitor is choosing
+                between, rather than the count of the page they are already on
+                (requirements/009 criterion 17).
+
+                Present on the first page of a listing and omitted on later ones: the counts
+                do not change as a cursor advances, and recomputing them per page is work
+                nobody reads.
+              items: { $ref: '#/components/schemas/CategoryFacet' }
     OrderPage:
       allOf:
         - $ref: '#/components/schemas/Page'

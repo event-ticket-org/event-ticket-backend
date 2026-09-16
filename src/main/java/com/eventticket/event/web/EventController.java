@@ -68,7 +68,7 @@ public class EventController implements EventsApi {
     @Override
     public ResponseEntity<com.eventticket.api.model.Event> eventsPost(EventInput request) {
         var created = createEvent.create(request.getTitle(), request.getDescription(),
-                request.getVenueId(), request.getStartsAt().toInstant(),
+                request.getCategorySlug(), request.getVenueId(), request.getStartsAt().toInstant(),
                 at(request.getDoorsOpenAt()), at(request.getEndsAt()),
                 request.getListed() == null || request.getListed());
         return ResponseEntity.status(HttpStatus.CREATED).body(EventMapper.toDto(created));
@@ -147,6 +147,7 @@ public class EventController implements EventsApi {
         return new EventChanges(
                 request.getTitle(),
                 request.getDescription(),
+                request.getCategorySlug(),
                 request.getCoverImageAlt(),
                 at(request.getStartsAt()),
                 at(request.getDoorsOpenAt()),

@@ -506,6 +506,23 @@ unaccented only the column, so typing a title exactly as written found nothing.
 the deployed application needs no superuser (verified against a `NOSUPERUSER` role, because the
 connection user is a superuser in development and test and would have proved nothing).
 
+**Platform vocabulary is enforced by a revoke, not by a convention.** `event_category` and
+`city` are the first tables here that belong to nobody: every other table carries
+`organization_id` and lives behind a policy, and these are the set an Organization chooses
+*from*. requirements/009 criterion 12 says a taxonomy anybody may add to stops being one, so
+`V14` revokes INSERT, UPDATE and DELETE on both from `eventticket_app` and the entities are
+`@Immutable`. Neither table has row-level security, and that is not an exemption - they have
+nothing to filter by, which is what makes `/public/categories` answerable with no tenant.
+
+**`immutable_unaccent`, never `unaccent`, in anything the title index should serve.** They
+compute the same answer and only the first can be an index expression. A trigram index on an
+expression is used only when the query's expression matches it exactly, so calling the STABLE
+form leaves `event_title_trgm_idx` unused and nothing says so - `scripts/search-benchmark.sh`
+asserts the index name appears in the plan for exactly that reason. Both the function and the
+dictionary are schema-qualified inside the wrapper: `'unaccent'::regdictionary` unqualified
+creates cleanly and then fails at `CREATE INDEX`, because inlining resolves the literal where
+the search path does not apply.
+
 Listings page by keyset, never by offset — an offset shifts under inserts, so a buyer scrolling
 while someone publishes sees rows twice or not at all. Fetch `limit + 1` to learn whether
 another page exists without counting the table.
@@ -669,6 +686,6 @@ it prevents.
 ## Bulk refactors
 
 Rewriting imports by simple class name collides with the generated contract types: `Role`,
-`Membership`, `Organization` and `OrganizationStatus` all exist in both
-`com.eventticket.api.model` and the domain. Skip any file that already binds that name, and
+`Membership`, `Organization`, `OrganizationStatus`, `Venue`, `City` and `Category` all exist in
+both `com.eventticket.api.model` and the domain. Skip any file that already binds that name, and
 qualify the domain side where both are genuinely in scope.

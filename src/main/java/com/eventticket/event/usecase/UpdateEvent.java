@@ -5,6 +5,7 @@ import com.eventticket.event.domain.EventChanges;
 import com.eventticket.event.domain.EventDetail;
 import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.EventSeat;
+import com.eventticket.event.repository.EventCategoryRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.EventSeatRepository;
 import com.eventticket.event.repository.PricingTierRepository;
@@ -43,15 +44,18 @@ public class UpdateEvent {
     private final EventSeatRepository seats;
     private final PricingTierRepository tiers;
     private final VenueRepository venues;
+    private final EventCategoryRepository categories;
     private final Managers managers;
     private final AuditTrail audit;
 
     public UpdateEvent(EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
-                VenueRepository venues, Managers managers, AuditTrail audit) {
+                VenueRepository venues, EventCategoryRepository categories, Managers managers,
+                AuditTrail audit) {
         this.events = events;
         this.seats = seats;
         this.tiers = tiers;
         this.venues = venues;
+        this.categories = categories;
         this.managers = managers;
         this.audit = audit;
     }
@@ -67,6 +71,13 @@ public class UpdateEvent {
             event.describeAs(
                     changes.title() != null ? changes.title() : event.title(),
                     changes.description() != null ? changes.description() : event.description());
+        }
+
+        // A Category is a description of the Event rather than something a sold Ticket
+        // depends on, so it moves for as long as the Event is editable - somebody who filed a
+        // comedy night under theatre should be able to say so afterwards.
+        if (changes.categorySlug() != null) {
+            event.categoriseAs(categories.findOrThrow(changes.categorySlug()));
         }
 
         // The picture is uploaded, not patched (ADR-0006), but what it *shows* is text like

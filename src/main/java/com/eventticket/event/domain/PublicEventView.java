@@ -14,6 +14,20 @@ package com.eventticket.event.domain;
  * room of twenty and a room of two thousand.
  */
 public record PublicEventView(Event event, String organizationName, String venueName,
-                              String city, String timezone, EventPricing pricing,
-                              long seatsAvailable, long seatsTotal) {
+                              String city, String citySlug, String timezone,
+                              EventPricing pricing, long seatsAvailable, long seatsTotal) {
+
+    /**
+     * The Category's slug and name come off the Event itself rather than being carried here,
+     * because unlike the Venue and the Organization it is an association Hibernate already
+     * loaded - eagerly, precisely so that this mapping can happen in the controller outside
+     * the use case's transaction.
+     */
+    public String categorySlug() {
+        return event.category().slug();
+    }
+
+    public String categoryName() {
+        return event.category().name();
+    }
 }

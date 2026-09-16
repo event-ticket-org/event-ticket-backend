@@ -39,14 +39,14 @@ class EventTenancyTest extends ApiTest {
         TokenPair alice = signUp("alice@example.com");
         Organization acme = createOrganization(alice, "Acme Events");
         TokenPair aliceAtAcme = switchTo(alice, acme);
-        Venue acmeVenue = createVenue(aliceAtAcme, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue acmeVenue = createVenue(aliceAtAcme, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(aliceAtAcme, acmeVenue.getId(), SeatMaps.block("Standard", 2, 2));
         createEvent(aliceAtAcme, acmeVenue.getId(), "Acme's Secret Show", NEXT_MONTH);
 
         TokenPair bob = signUp("bob@example.com");
         Organization rival = createOrganization(bob, "Rival Promotions");
         TokenPair bobAtRival = switchTo(bob, rival);
-        Venue rivalVenue = createVenue(bobAtRival, "Rival Hall", "Da Nang");
+        Venue rivalVenue = createVenue(bobAtRival, "Rival Hall", "da-nang");
         createEvent(bobAtRival, rivalVenue.getId(), "Rival's Show", NEXT_MONTH);
 
         UUID bobId = userIdOf(bob);
@@ -64,7 +64,7 @@ class EventTenancyTest extends ApiTest {
         Organization acme = createOrganization(alice, "Acme Events");
         approve(acme);
         TokenPair aliceAtAcme = switchTo(alice, acme);
-        Venue venue = createVenue(aliceAtAcme, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(aliceAtAcme, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(aliceAtAcme, venue.getId(), SeatMaps.block("Standard", 2, 5));
         Event event = createEvent(aliceAtAcme, venue.getId(), "Live in Saigon", NEXT_MONTH);
         priceTier(aliceAtAcme, event.getId(), "Standard", 250_000);

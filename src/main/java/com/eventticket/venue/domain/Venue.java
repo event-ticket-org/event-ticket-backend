@@ -5,6 +5,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
@@ -31,9 +33,19 @@ public class Venue {
 
     private String address;
 
-    /** Separate from the address because the public listing filters on it (requirements/009). */
-    @Column(nullable = false)
-    private String city;
+    /**
+     * Separate from the address because the public listing filters on it, and a reference
+     * rather than text because the listing also groups and counts by it (requirements/009
+     * criterion 13).
+     *
+     * <p>Eagerly fetched, which is the default for {@code @ManyToOne} and is left alone
+     * deliberately. A Venue is mapped to a DTO in the controller, outside the use case's
+     * transaction, so a lazy City would be a {@code LazyInitializationException} at exactly
+     * the moment somebody reads a listing. It is one row from a table of ten.
+     */
+    @ManyToOne
+    @JoinColumn(name = "city_slug", nullable = false)
+    private City city;
 
     /**
      * An IANA zone. nfr.md stores every instant in UTC and displays it in the Venue's zone, so
@@ -51,7 +63,7 @@ public class Venue {
 
     protected Venue() {}
 
-    public Venue(UUID organizationId, String name, String address, String city, String timezone) {
+    public Venue(UUID organizationId, String name, String address, City city, String timezone) {
         this.organizationId = organizationId;
         this.name = name;
         this.address = address;
@@ -75,7 +87,7 @@ public class Venue {
         return address;
     }
 
-    public String city() {
+    public City city() {
         return city;
     }
 
@@ -104,7 +116,7 @@ public class Venue {
         return this;
     }
 
-    public void describeAs(String name, String address, String city, String timezone) {
+    public void describeAs(String name, String address, City city, String timezone) {
         this.name = name;
         this.address = address;
         this.city = city;

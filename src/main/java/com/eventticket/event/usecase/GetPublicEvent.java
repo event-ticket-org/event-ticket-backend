@@ -61,8 +61,9 @@ public class GetPublicEvent {
         SeatCounts counted = SeatCounts.of(
                 SeatCounts.asMap(seats.countSeats(List.of(eventId), Instant.now())), eventId);
 
-        return new PublicEventView(event, organizationName, venue.name(), venue.city(),
-                venue.timezone(), EventPricing.of(event, null, tiers.findByEventId(eventId)),
+        return new PublicEventView(event, organizationName, venue.name(), venue.city().name(),
+                venue.city().slug(), venue.timezone(),
+                EventPricing.of(event, null, tiers.findByEventId(eventId)),
                 counted.available(), counted.total());
     }
 }

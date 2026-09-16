@@ -3,6 +3,7 @@ package com.eventticket.venue.usecase;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.venue.domain.Venue;
+import com.eventticket.venue.repository.CityRepository;
 import com.eventticket.venue.repository.VenueRepository;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -17,20 +18,23 @@ public class CreateVenue {
     private static final Logger log = LoggerFactory.getLogger(CreateVenue.class);
 
     private final VenueRepository venues;
+    private final CityRepository cities;
     private final Managers managers;
 
-    public CreateVenue(VenueRepository venues, Managers managers) {
+    public CreateVenue(VenueRepository venues, CityRepository cities, Managers managers) {
         this.venues = venues;
+        this.cities = cities;
         this.managers = managers;
     }
 
     @Transactional
-    public Venue create(String name, String address, String city, String timezone) {
+    public Venue create(String name, String address, String citySlug, String timezone) {
         UUID organizationId = TenantContext.requireOrganizationId();
         managers.requireCallerCanManageEvents(organizationId);
 
-        Venue venue = venues.save(new Venue(organizationId, name, address, city, timezone));
-        log.info("Created venue venueId={} city={}", venue.id(), city);
+        Venue venue = venues.save(new Venue(organizationId, name, address,
+                cities.findOrThrow(citySlug), timezone));
+        log.info("Created venue venueId={} city={}", venue.id(), citySlug);
         return venue;
     }
 }
