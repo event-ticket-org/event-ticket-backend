@@ -1,6 +1,8 @@
 package com.eventticket.platform.web;
 
 import com.eventticket.api.PlatformAdminApi;
+import com.eventticket.api.model.FeaturedSlot;
+import com.eventticket.api.model.FeaturedSlotInput;
 import com.eventticket.api.model.OrganizationDecisionRequest;
 import com.eventticket.api.model.OrganizationPage;
 import com.eventticket.api.model.OrganizationOwner;
@@ -8,7 +10,9 @@ import com.eventticket.api.model.OrganizationStatus;
 import com.eventticket.organization.domain.Organization;
 import com.eventticket.platform.domain.OrganizationReview;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import com.eventticket.platform.usecase.DecideOrganization;
@@ -24,6 +28,20 @@ public class PlatformAdminController implements PlatformAdminApi {
                             DecideOrganization decideOrganization) {
         this.listPendingOrganizations = listPendingOrganizations;
         this.decideOrganization = decideOrganization;
+    }
+
+    /**
+     * Curation, recognised and not yet built - see {@code PublicEventController} for why these
+     * answer 501 rather than an empty row.
+     */
+    @Override
+    public ResponseEntity<List<FeaturedSlot>> adminFeaturedSlotsGet() {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+    }
+
+    @Override
+    public ResponseEntity<List<FeaturedSlot>> adminFeaturedSlotsPut(List<FeaturedSlotInput> request) {
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
     }
 
     @Override

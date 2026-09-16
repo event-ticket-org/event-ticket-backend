@@ -31,9 +31,16 @@ public class Venue {
 
     private String address;
 
-    /** Separate from the address because the public listing filters on it (requirements/009). */
-    @Column(nullable = false)
-    private String city;
+    /**
+     * The City's slug, held as the foreign key itself rather than as a mapped association.
+     *
+     * <p>Separate from the address because the public listing filters on it, and a reference
+     * rather than free text because the listing also groups and counts by it
+     * (requirements/009 criterion 13). Whoever needs the City's *name* asks
+     * {@code CityRepository} for it - see the note on foreign keys in CLAUDE.md.
+     */
+    @Column(name = "city_slug", nullable = false)
+    private String citySlug;
 
     /**
      * An IANA zone. nfr.md stores every instant in UTC and displays it in the Venue's zone, so
@@ -51,11 +58,12 @@ public class Venue {
 
     protected Venue() {}
 
-    public Venue(UUID organizationId, String name, String address, String city, String timezone) {
+    public Venue(UUID organizationId, String name, String address, String citySlug,
+                 String timezone) {
         this.organizationId = organizationId;
         this.name = name;
         this.address = address;
-        this.city = city;
+        this.citySlug = citySlug;
         this.timezone = timezone;
     }
 
@@ -75,8 +83,8 @@ public class Venue {
         return address;
     }
 
-    public String city() {
-        return city;
+    public String citySlug() {
+        return citySlug;
     }
 
     public String timezone() {
@@ -104,10 +112,10 @@ public class Venue {
         return this;
     }
 
-    public void describeAs(String name, String address, String city, String timezone) {
+    public void describeAs(String name, String address, String citySlug, String timezone) {
         this.name = name;
         this.address = address;
-        this.city = city;
+        this.citySlug = citySlug;
         this.timezone = timezone;
     }
 

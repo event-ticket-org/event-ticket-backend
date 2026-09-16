@@ -119,9 +119,9 @@ class PublishedSeatMapIsFrozenTest extends ApiTest {
         approve(organization);
         TokenPair manager = switchTo(alice, organization);
 
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(manager, venue.getId(), SeatMaps.block("Standard", 2, 5));
-        createVenue(manager, "Other Room", "Ho Chi Minh City");
+        createVenue(manager, "Other Room", "tp-ho-chi-minh");
 
         createEvent(manager, venue.getId(), "Still Cooking", NEXT_MONTH);
 

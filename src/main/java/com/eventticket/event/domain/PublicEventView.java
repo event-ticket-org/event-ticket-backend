@@ -14,6 +14,17 @@ package com.eventticket.event.domain;
  * room of twenty and a room of two thousand.
  */
 public record PublicEventView(Event event, String organizationName, String venueName,
-                              String city, String timezone, EventPricing pricing,
-                              long seatsAvailable, long seatsTotal) {
+                              String city, String citySlug, String categoryName,
+                              String timezone, EventPricing pricing, long seatsAvailable,
+                              long seatsTotal) {
+
+    /**
+     * The slug is on the Event; only the name has to be fetched. Carrying the name here is
+     * the same move as {@code organizationName} and {@code venueName} above - the use case
+     * reads it inside its transaction, so nothing in the web layer has to know where it came
+     * from or be inside a transaction to ask.
+     */
+    public String categorySlug() {
+        return event.categorySlug();
+    }
 }

@@ -3,6 +3,7 @@ package com.eventticket.event.usecase;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.domain.EventPricing;
 import com.eventticket.event.domain.PublicEventView;
+import com.eventticket.event.repository.EventCategoryRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.EventSeatRepository;
 import com.eventticket.event.repository.PricingTierRepository;
@@ -10,6 +11,7 @@ import com.eventticket.event.repository.SeatCounts;
 import com.eventticket.organization.repository.OrganizationRepository;
 import com.eventticket.shared.error.ApiException;
 import com.eventticket.venue.domain.Venue;
+import com.eventticket.venue.repository.CityRepository;
 import com.eventticket.venue.repository.VenueRepository;
 import java.time.Instant;
 import java.util.List;
@@ -35,15 +37,20 @@ public class GetPublicEvent {
     private final PricingTierRepository tiers;
     private final VenueRepository venues;
     private final OrganizationRepository organizations;
+    private final CityRepository cities;
+    private final EventCategoryRepository categories;
 
     public GetPublicEvent(EventRepository events, EventSeatRepository seats,
                    PricingTierRepository tiers, VenueRepository venues,
-                   OrganizationRepository organizations) {
+                   OrganizationRepository organizations, CityRepository cities,
+                   EventCategoryRepository categories) {
         this.events = events;
         this.seats = seats;
         this.tiers = tiers;
         this.venues = venues;
         this.organizations = organizations;
+        this.cities = cities;
+        this.categories = categories;
     }
 
     @Transactional(readOnly = true)
@@ -61,8 +68,10 @@ public class GetPublicEvent {
         SeatCounts counted = SeatCounts.of(
                 SeatCounts.asMap(seats.countSeats(List.of(eventId), Instant.now())), eventId);
 
-        return new PublicEventView(event, organizationName, venue.name(), venue.city(),
-                venue.timezone(), EventPricing.of(event, null, tiers.findByEventId(eventId)),
+        return new PublicEventView(event, organizationName, venue.name(),
+                cities.findOrThrow(venue.citySlug()).name(), venue.citySlug(),
+                categories.findOrThrow(event.categorySlug()).name(), venue.timezone(),
+                EventPricing.of(event, null, tiers.findByEventId(eventId)),
                 counted.available(), counted.total());
     }
 }

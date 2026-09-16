@@ -184,7 +184,7 @@ class BuyingTicketsTest extends ApiTest {
         approve(organization);
         TokenPair manager = switchTo(alice, organization);
 
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(manager, venue.getId(), SeatMaps.block("Standard", 2, 5));
         Event event = createEvent(manager, venue.getId(), "Live in Saigon", NEXT_MONTH);
         priceTier(manager, event.getId(), "Standard", 250_000);

@@ -21,17 +21,26 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 
 /** Contract shapes, in one place, so that neither Event controller grows a second version. */
 final class EventMapper {
 
     private EventMapper() {}
 
-    static com.eventticket.api.model.Event toDto(EventDetail detail) {
+    /**
+     * @param categoryNames slug to display name. Passed in rather than looked up here, and
+     *                      rather than reached through the Event: an Event holds its Category's
+     *                      slug and no association to follow, so the name is a read its caller
+     *                      makes once for a whole page instead of once per row.
+     */
+    static com.eventticket.api.model.Event toDto(EventDetail detail,
+                                                 Map<String, String> categoryNames) {
         Event event = detail.event();
         var dto = new com.eventticket.api.model.Event(event.title(), event.venueId(),
-                at(event.startsAt()), event.id(), event.organizationId(),
-                EventStatus.fromValue(event.status().name()));
+                event.categorySlug(), at(event.startsAt()), event.id(),
+                event.organizationId(), EventStatus.fromValue(event.status().name()));
+        dto.setCategoryName(categoryNames.get(event.categorySlug()));
         dto.setDescription(event.description());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
@@ -65,7 +74,8 @@ final class EventMapper {
     static PublicEvent toPublicDto(PublicEventView view) {
         Event event = view.event();
         var dto = new PublicEvent(event.id(), event.title(), view.organizationName(),
-                view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
+                view.venueName(), view.city(), view.citySlug(), view.categorySlug(),
+                view.categoryName(), at(event.startsAt()), view.timezone(),
                 (int) view.seatsTotal(), (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());
@@ -82,7 +92,8 @@ final class EventMapper {
     static PublicEventSummary toSummaryDto(PublicEventView view) {
         Event event = view.event();
         var dto = new PublicEventSummary(event.id(), event.title(), view.organizationName(),
-                view.venueName(), view.city(), at(event.startsAt()), view.timezone(),
+                view.venueName(), view.city(), view.citySlug(), view.categorySlug(),
+                view.categoryName(), at(event.startsAt()), view.timezone(),
                 (int) view.seatsTotal(), (int) view.seatsAvailable());
         dto.setCoverImageUrl(uri(event.coverImageUrl()));
         dto.setCoverImageAlt(event.coverImageAlt());

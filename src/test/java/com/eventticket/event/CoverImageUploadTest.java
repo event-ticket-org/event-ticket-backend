@@ -540,7 +540,7 @@ class CoverImageUploadTest extends ApiTest {
     }
 
     private Venue venueWithSeats(TokenPair manager) {
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
         SeatMap map = SeatMaps.block("Standard", 2, 2);
         putSeatMap(manager, venue.getId(), map);
         return venue;

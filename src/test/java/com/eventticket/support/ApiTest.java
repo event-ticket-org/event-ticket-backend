@@ -184,8 +184,9 @@ public abstract class ApiTest {
 
     // --- Venues and events (requirements/002 and 003) --------------------------------------
 
-    protected Venue createVenue(TokenPair session, String name, String city) {
-        var input = new VenueInput(name, city, "Asia/Ho_Chi_Minh");
+    /** @param citySlug from {@code GET /public/cities}, not a city's name (requirements/009 criterion 13). */
+    protected Venue createVenue(TokenPair session, String name, String citySlug) {
+        var input = new VenueInput(name, citySlug, "Asia/Ho_Chi_Minh");
         input.setAddress("14 Cach Mang Thang 8");
         return exchange(HttpMethod.POST, "/venues", session, input, Venue.class).getBody();
     }
@@ -193,6 +194,13 @@ public abstract class ApiTest {
     protected ResponseEntity<SeatMap> putSeatMap(TokenPair session, UUID venueId, SeatMap map) {
         return exchange(HttpMethod.PUT, "/venues/" + venueId + "/seat-map", session, map, SeatMap.class);
     }
+
+    /**
+     * A real Category rather than the catch-all, so that a fixture nobody thought about does not
+     * quietly fill {@code khac} with every Event in the suite - which would make the catch-all
+     * useless as a signal and hide a test that meant to land there.
+     */
+    protected static final String A_CATEGORY = "nhac-song";
 
     /**
      * With an admission window, because publishing requires one (requirements/003 criterion 16)
@@ -207,7 +215,13 @@ public abstract class ApiTest {
     protected Event createEvent(TokenPair session, UUID venueId, String title,
                                 OffsetDateTime startsAt, OffsetDateTime doorsOpenAt,
                                 OffsetDateTime endsAt) {
-        var input = new EventInput(title, venueId, startsAt);
+        return createEvent(session, venueId, title, A_CATEGORY, startsAt, doorsOpenAt, endsAt);
+    }
+
+    protected Event createEvent(TokenPair session, UUID venueId, String title, String categorySlug,
+                                OffsetDateTime startsAt, OffsetDateTime doorsOpenAt,
+                                OffsetDateTime endsAt) {
+        var input = new EventInput(title, venueId, categorySlug, startsAt);
         input.setDoorsOpenAt(doorsOpenAt);
         input.setEndsAt(endsAt);
         return exchange(HttpMethod.POST, "/events", session, input, Event.class).getBody();

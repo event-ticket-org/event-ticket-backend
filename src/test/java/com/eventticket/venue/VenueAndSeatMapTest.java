@@ -33,9 +33,11 @@ class VenueAndSeatMapTest extends ApiTest {
     void venueStartsWithAnEmptySeatMap() {
         TokenPair manager = managerOfNewOrganization();
 
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
 
-        assertThat(venue.getCity()).isEqualTo("Ho Chi Minh City");
+        assertThat(venue.getCitySlug()).isEqualTo("tp-ho-chi-minh");
+        // Sent back alongside the slug so that drawing a Venue is not a second request.
+        assertThat(venue.getCity()).isEqualTo("TP Hồ Chí Minh");
         assertThat(venue.getTimezone()).isEqualTo("Asia/Ho_Chi_Minh");
         assertThat(venue.getSeatCount()).isZero();
 
@@ -49,7 +51,7 @@ class VenueAndSeatMapTest extends ApiTest {
     @DisplayName("a generated block of rows is stored and read back whole")
     void seatMapIsReplacedWhole() {
         TokenPair manager = managerOfNewOrganization();
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
 
         SeatMap replaced = putSeatMap(manager, venue.getId(), SeatMaps.block("Standard", 3, 10)).getBody();
 
@@ -66,7 +68,7 @@ class VenueAndSeatMapTest extends ApiTest {
     @DisplayName("two seats may not share a label")
     void duplicateLabelsAreRefused() {
         TokenPair manager = managerOfNewOrganization();
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
 
         SeatMap clashing = SeatMaps.of(
                 SeatMaps.seat("A1", 1, 1, "Standard"),
@@ -84,7 +86,7 @@ class VenueAndSeatMapTest extends ApiTest {
     @DisplayName("two seats may not share a position")
     void seatsOnTopOfEachOtherAreRefused() {
         TokenPair manager = managerOfNewOrganization();
-        Venue venue = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue venue = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
 
         SeatMap overlapping = SeatMaps.of(
                 SeatMaps.seat("A1", 1, 1, "Standard"),
@@ -108,7 +110,7 @@ class VenueAndSeatMapTest extends ApiTest {
         TokenPair doorman = switchTo(signUp("doorman@example.com"), organization);
 
         ResponseEntity<Error> refused = exchange(HttpMethod.POST, "/venues", doorman,
-                new VenueInput("Side Room", "Ho Chi Minh City", "Asia/Ho_Chi_Minh"), Error.class);
+                new VenueInput("Side Room", "tp-ho-chi-minh", "Asia/Ho_Chi_Minh"), Error.class);
 
         assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(refused.getBody().getCode()).isEqualTo(ErrorCode.NOT_PERMITTED);
@@ -120,11 +122,11 @@ class VenueAndSeatMapTest extends ApiTest {
         TokenPair manager = managerOfNewOrganization();
         approve(onlyOrganizationOf(manager));
 
-        Venue unused = createVenue(manager, "Storage Room", "Ho Chi Minh City");
+        Venue unused = createVenue(manager, "Storage Room", "tp-ho-chi-minh");
         assertThat(exchange(HttpMethod.DELETE, "/venues/" + unused.getId(), manager, null, Void.class)
                 .getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
 
-        Venue inUse = createVenue(manager, "Hoa Binh Theatre", "Ho Chi Minh City");
+        Venue inUse = createVenue(manager, "Hoa Binh Theatre", "tp-ho-chi-minh");
         putSeatMap(manager, inUse.getId(), SeatMaps.block("Standard", 2, 2));
         Event event = createEvent(manager, inUse.getId(), "Live in Saigon",
                 OffsetDateTime.now().plus(30, ChronoUnit.DAYS));
