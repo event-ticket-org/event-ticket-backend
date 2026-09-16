@@ -31,8 +31,18 @@ com.eventticket.<feature>
 ```
 
 `shared/` is subdivided by capability instead: `audit/`, `directory/`, `email/`, `error/`,
-`money/`, `page/`, `persistence/`, `storage/`, `tenancy/`. The bar for adding to `shared` is that
-**every** feature needs it.
+`money/`, `page/`, `persistence/`, `tenancy/`.
+
+**The bar for `shared` is that more than one module needs it, or that the whole application runs
+on it whoever names it.** The second half is not a loophole, it is `persistence/`: read routing
+supplies the `DataSource` every query in the system goes through, and exactly one class imports
+it by name. Counting importers would have thrown it out.
+
+It used to say *every* feature needs it, and nothing met that - measured across the nine feature
+modules, `error` reaches eight, `tenancy` seven, `email` five, `page` two. A bar nothing clears
+is not the one being applied, and `storage/` is what that cost: it sat in `shared` for the life
+of the project while this file said, forty lines below, that `event` used it and nothing else
+did. It lives in `event/storage/` now.
 
 **A capability with more than a handful of classes is grouped by the part of itself it belongs
 to**, because the capability name stops being enough to find anything:
@@ -43,10 +53,10 @@ email/       EmailSender            the port every feature calls
              transport/             how a message actually leaves
 persistence/ routing/               which node a query goes to
              freshness/             whether the replica has caught up
-storage/     StorageProperties      configuration
-             object/                the store, its port and what goes in it
-             image/                 turning an upload into renderings
 ```
+
+`event/storage/` is grouped the same way — `object/` for the store and its port, `image/` for
+turning an upload into renderings, `StorageProperties` at the root as configuration.
 
 `directory/` holds `UserDirectory`, which is the port `organization` reaches people through so
 that it and `identity` never become mutually dependent. It sat on the module root for a while,
@@ -178,7 +188,11 @@ identity as part of its own work (token refresh) or acts on an organization from
 ## Object storage
 
 Cover images go straight from the browser to the store and are checked afterwards (ADR-0006).
-`shared/storage` is the port and the S3 adapter; `event` uses it and nothing else does.
+`event/storage` is the port and the S3 adapter, and it lives in `event` because `event` is the
+only module that uses it. It was in `shared/` until the sentence you are reading was noticed to
+contradict the bar for `shared` stated at the top of this file. Being a port is an argument for
+the interface, not for the package: `ObjectStore` inverts the dependency on S3 wherever it sits.
+If `ticket` ever needs object storage for a PDF, moving it back is this change reversed.
 
 **The presigned POST policy is written by hand, and that is not an oversight.** The Java SDK v2
 presigns GET and PUT and has no POST policy at all, where the JavaScript and Python SDKs do. A

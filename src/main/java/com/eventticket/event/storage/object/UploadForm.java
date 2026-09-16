@@ -1,4 +1,4 @@
-package com.eventticket.shared.storage.object;
+package com.eventticket.event.storage.object;
 
 import java.time.Instant;
 import java.util.Map;

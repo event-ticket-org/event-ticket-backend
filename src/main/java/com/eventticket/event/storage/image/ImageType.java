@@ -1,4 +1,4 @@
-package com.eventticket.shared.storage.image;
+package com.eventticket.event.storage.image;
 
 import java.util.Optional;
 

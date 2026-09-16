@@ -1,4 +1,4 @@
-package com.eventticket.shared.storage.image;
+package com.eventticket.event.storage.image;
 
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;

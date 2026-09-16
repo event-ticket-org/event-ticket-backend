@@ -1,4 +1,4 @@
-package com.eventticket.shared.storage;
+package com.eventticket.event.storage;
 
 import java.time.Duration;
 import org.springframework.boot.context.properties.ConfigurationProperties;

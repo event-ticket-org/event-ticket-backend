@@ -3,7 +3,7 @@ package com.eventticket.event.usecase;
 import com.eventticket.event.domain.Event;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.organization.domain.Managers;
-import com.eventticket.shared.storage.object.ObjectStore;
+import com.eventticket.event.storage.object.ObjectStore;
 import com.eventticket.shared.tenancy.TenantContext;
 import java.util.UUID;
 import org.springframework.stereotype.Component;

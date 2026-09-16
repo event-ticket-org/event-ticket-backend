@@ -1,6 +1,6 @@
-package com.eventticket.shared.storage.object;
+package com.eventticket.event.storage.object;
 
-import com.eventticket.shared.storage.StorageProperties;
+import com.eventticket.event.storage.StorageProperties;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
