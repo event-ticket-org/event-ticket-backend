@@ -107,6 +107,30 @@ public interface EventRepository extends JpaRepository<Event, UUID> {
                                       Pageable page);
 
     /**
+     * The listing's eligibility, applied to a set of ids rather than to a page.
+     *
+     * <p>Published, listed, not yet started, approved Organization - the same four conditions
+     * {@link #findPublicPage} applies, and deliberately the same four rather than a looser set.
+     * A curated row is a row of the public listing: one that could show an Event the listing
+     * below it will not is a link into a catalogue that does not go there.
+     *
+     * <p>Unordered. The caller placed these in an order of its own - curated or ranked - and a
+     * sort here would silently replace it.
+     */
+    @Query("""
+           select e from Event e
+           where e.id in :ids
+             and e.status = :published
+             and e.listed = true
+             and e.startsAt > :now
+             and e.organizationId in (select o.id from Organization o where o.status = :approved)
+           """)
+    public List<Event> findPublicByIds(@Param("ids") Collection<UUID> ids,
+                                       @Param("now") Instant now,
+                                       @Param("published") Event.Status published,
+                                       @Param("approved") Organization.Status approved);
+
+    /**
      * How many Events each Category would return under the filters already applied, with the
      * Category filter itself left out (criterion 17).
      *
