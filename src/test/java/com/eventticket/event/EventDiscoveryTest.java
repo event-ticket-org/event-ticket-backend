@@ -32,6 +32,13 @@ import org.springframework.http.ResponseEntity;
  */
 class EventDiscoveryTest extends ApiTest {
 
+    /**
+     * Driven directly, because the drain runs on a schedule the suite turns off. A test that
+     * waited two seconds for a tick would be slow and occasionally green for the wrong reason.
+     */
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.eventticket.event.search.outbox.IndexPendingEvents indexPendingEvents;
+
     private static final OffsetDateTime NEXT_MONTH =
             OffsetDateTime.now().plus(30, ChronoUnit.DAYS);
 
@@ -102,21 +109,30 @@ class EventDiscoveryTest extends ApiTest {
     }
 
     /**
-     * The pattern is ours; the text in it is the caller's. Without escaping, a search for a
-     * discount matches the entire listing, which reads as the filter being broken rather than
-     * as a character having quietly meant something.
+     * A visitor's punctuation is never a wildcard, and the reason changed underneath this test.
+     *
+     * <p>Against Postgres, `%` and `_` were LIKE's own syntax and had to be escaped or a search
+     * for a discount matched the whole listing. The index has no such syntax: the analyzer
+     * drops punctuation before anything is matched, so `%` carries no term at all and finds
+     * nothing, while `50%` carries the term `50` and finds the event.
+     *
+     * <p>That is a real behaviour change and it is asserted rather than smoothed over. Both
+     * systems refuse to treat a visitor's punctuation as an operator; only one of them ever
+     * could have, and the fallback path still escapes for exactly that reason.
      */
     @Test
-    @DisplayName("wildcards typed by a visitor are text, not wildcards")
+    @DisplayName("punctuation a visitor types is never an operator")
     void wildcardsAreLiteral() {
         TokenPair manager = approvedManager();
         Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
         publish(manager, venue, "Live in Saigon", NEXT_MONTH);
         publish(manager, venue, "50% Off Night", NEXT_MONTH);
 
-        assertThat(titles(search("%"))).containsExactly("50% Off Night");
+        // The term survives the punctuation around it.
         assertThat(titles(search("50%"))).containsExactly("50% Off Night");
-        // `_` matches any single character in LIKE, so an unescaped one would match both.
+        // ...and punctuation on its own is not a term, so it matches nothing rather than
+        // everything. Under LIKE this was the escaping's job; here there is nothing to escape.
+        assertThat(titles(search("%"))).isEmpty();
         assertThat(titles(search("_"))).isEmpty();
     }
 
@@ -238,6 +254,10 @@ class EventDiscoveryTest extends ApiTest {
         var patch = new com.eventticket.api.model.EventPatch();
         patch.setDescription("An evening of xylophone music");
         exchange(HttpMethod.PATCH, "/events/" + event.getId(), manager, patch, Event.class);
+        // Changed after publishing, so the index has to be told. The shared publish helper
+        // drains for the publish itself; nothing can do it automatically for a later edit
+        // without putting a drain inside the read.
+        indexPendingEvents();
 
         assertThat(titles(search("xylophone"))).containsExactly("Untitled Evening");
         // The Venue's name and the Organization's name, neither of which is on the Event.
@@ -248,20 +268,28 @@ class EventDiscoveryTest extends ApiTest {
     // ---- the second ordering, and what is not built yet (criterion 5) ----
 
     /**
-     * Criterion 5 gives the listing two orderings and says a client asks for one rather than
-     * inferring which it got. Nothing can compute relevance yet, so a refusal is the honest
-     * answer: ordering chronologically would satisfy the request and lose the information that
-     * it was not honoured.
+     * Criterion 5's second ordering, now that something can compute it.
+     *
+     * <p>This is the exact pair {@code matchingDoesNotReorder} uses, asserted the other way
+     * round, and the two together are what say the orderings are real rather than nominal:
+     * "Rock" is an exact title and starts later, "Rock and Roll Revival" merely contains the
+     * word and starts sooner. By start time the Revival is first. By relevance the exact match
+     * is - and if either assertion could hold with the other's implementation, neither is
+     * testing anything.
      */
     @Test
-    @DisplayName("relevance ordering is refused rather than quietly downgraded")
-    void relevanceIsRefusedWhileItDoesNotExist() {
-        ResponseEntity<Error> refused = exchange(HttpMethod.GET,
-                "/public/events?sort=RELEVANCE&q={q}", null, null, Error.class,
-                Map.of("q", "anything"));
+    @DisplayName("relevance puts the exact match first, where start time puts the soonest first")
+    void relevanceReordersWhenAskedFor() {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager, SeatMaps.block("Standard", 2, 2));
+        publish(manager, venue, "Rock", NEXT_MONTH.plusDays(10));
+        publish(manager, venue, "Rock and Roll Revival", NEXT_MONTH);
+        indexPendingEvents.drain();
 
-        assertThat(refused.getStatusCode()).isEqualTo(HttpStatus.UNPROCESSABLE_CONTENT);
-        assertThat(refused.getBody().getMessage()).contains("not available yet");
+        assertThat(titles(search("rock")))
+                .containsExactly("Rock and Roll Revival", "Rock");
+        assertThat(titles(listing(Map.of("q", "rock", "sort", "RELEVANCE"))))
+                .containsExactly("Rock", "Rock and Roll Revival");
     }
 
     @Test

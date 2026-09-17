@@ -525,6 +525,37 @@ roles on one cluster. The test container runs the same way - security on, TLS of
 test cluster that accepted anything would pass whether or not the client ever sent a
 credential, which is the same shape as a store that accepts every write.
 
+**An aggregation is scoped to the query, so a facet you filter on needs `post_filter`.**
+Criterion 17's counts are what a visitor is choosing between, which means counting every
+Category while showing one. Putting the Category clause in the query and a filter aggregation
+inside it cannot do that - the aggregation only ever sees what the query matched, so five of
+six numbers come back zero and the sixth is the page size. The Category goes in `post_filter`,
+which runs after the aggregations and narrows the hits alone.
+
+**`_id` cannot be sorted on**, and `search_after` needs a tie-break key or two Events with the
+same score page inconsistently, one repeated and one skipped. The document carries its own `id`
+as a keyword for that and for nothing else. The symptom is `all shards failed`, which names the
+shard and not the field.
+
+**The index is reset with the database in tests**, because it is derived from it. Leaving it
+alone was a real failure and an instructive one: documents survived the truncate, a page filled
+with twenty ids whose Events were gone, every one was dropped by the read-back, and the listing
+came back empty. Three tests passed alone and failed in the suite, and the symptom pointed
+nowhere near the cause. The same shape exists in a deployment, bounded rather than absent - a
+stale document occupies a slot until the nightly rebuild.
+
+**The public listing is eventually consistent, and the suite makes it synchronous at publish.**
+A deployment drains every two seconds, which is under the time it takes to type a query; a test
+that published and then listed would be a race. `ApiTest.publish` drains, and a test that
+changes an Event *afterwards* calls `indexPendingEvents()` itself - there is no way to make that
+automatic without putting a drain inside the read, which is the coupling the whole design
+avoids.
+
+**A fallback logs the cause, not its own message.** The listing falling back to Postgres logged
+"the cluster could not answer" and swallowed what it wrapped, so a mapping mistake and a dead
+cluster produced the same line - and the first real bug in the query took three runs to find
+because of it.
+
 **Two Jacksons, and neither is a mistake.** This application serialises with Jackson 3
 (`tools.jackson`, per Boot 4); the Elasticsearch client ships its own mapper on Jackson 2 and
 uses it for request bodies. So an `Instant` in a document goes through a mapper Spring never

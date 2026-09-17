@@ -74,6 +74,13 @@ public abstract class ApiTest {
 
     @Autowired protected RecordingEmailSender email;
     @Autowired protected JdbcTemplate jdbc;
+
+    /** Absent when no search cluster is configured, which is a deployment without one. */
+    @Autowired(required = false)
+    protected com.eventticket.event.search.outbox.IndexPendingEvents searchIndexer;
+
+    @Autowired(required = false)
+    protected com.eventticket.event.search.EventSearchIndex searchIndex;
     @Autowired protected FakePaymentProvider fakeProvider;
 
     @LocalServerPort private int port;
@@ -108,6 +115,32 @@ public abstract class ApiTest {
                 + "venue, membership, refresh_token, email_verification_token, password_reset_token, "
                 + "organization, "
                 + "app_user cascade");
+        clearSearchIndex();
+    }
+
+    /**
+     * The index is derived from the database, so it is reset with the database.
+     *
+     * <p>Leaving it alone was a real failure and an instructive one: the index kept documents
+     * for Events that the truncate had removed, a page filled with twenty of those ids, every
+     * one of them was dropped by the read-back against Postgres, and the listing came back
+     * empty. Three tests that passed alone failed in the suite, and the symptom - an empty
+     * listing - pointed nowhere near the cause.
+     *
+     * <p>It is worth knowing that the same shape exists in a deployment, bounded rather than
+     * absent: a document whose Event is gone is filtered out of the results but still occupies
+     * a slot on the page, until the nightly rebuild replaces the index wholesale.
+     */
+    private void clearSearchIndex() {
+        if (searchIndex == null) {
+            return;
+        }
+        try {
+            searchIndex.replaceAll(java.util.List.of());
+        } catch (RuntimeException e) {
+            // A cluster that is not up yet is not a reason to fail every test in the class.
+            // The tests that need the index will say so themselves.
+        }
     }
 
     /** Registers, follows the emailed verification link, and returns a signed-in session. */
@@ -256,8 +289,37 @@ public abstract class ApiTest {
                 Object.class);
     }
 
+    /**
+     * Publishes, and then makes the search index current before returning.
+     *
+     * <p>The public listing is served from the index and the index is eventually consistent -
+     * a deployment drains the outbox every two seconds, which is under the time it takes
+     * somebody to type a query and entirely fine for a visitor. It is not fine for a test,
+     * where "publish then list" would be a race, and a test that sometimes sees its own Event
+     * is worse than one that never does.
+     *
+     * <p>So the suite makes the indexer synchronous at the one point every test goes through.
+     * That keeps listing assertions about the listing rather than about timing, and the
+     * indexer's own behaviour - what it indexes, what it deletes, what happens when the
+     * cluster is down - is asserted directly in {@code SearchIndexingTest} instead.
+     *
+     * <p>A test that changes an Event <em>after</em> publishing and then asserts on the listing
+     * calls {@link #indexPendingEvents()} itself. There is no way to make that automatic
+     * without putting a drain inside the read, which is the coupling this whole design exists
+     * to avoid.
+     */
     protected <T> ResponseEntity<T> publish(TokenPair session, UUID eventId, Class<T> responseType) {
-        return exchange(HttpMethod.POST, "/events/" + eventId + "/publish", session, null, responseType);
+        var response = exchange(HttpMethod.POST, "/events/" + eventId + "/publish", session,
+                null, responseType);
+        indexPendingEvents();
+        return response;
+    }
+
+    /** Drains the search outbox now, rather than waiting for the schedule the suite turns off. */
+    protected void indexPendingEvents() {
+        if (searchIndexer != null) {
+            searchIndexer.drain();
+        }
     }
 
     /** The single Organization the session's user belongs to, as the API reports it. */

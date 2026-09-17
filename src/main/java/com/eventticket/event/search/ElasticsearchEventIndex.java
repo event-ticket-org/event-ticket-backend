@@ -1,6 +1,10 @@
 package com.eventticket.event.search;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
+import co.elastic.clients.elasticsearch._types.FieldValue;
+import co.elastic.clients.elasticsearch._types.SortOrder;
+import co.elastic.clients.elasticsearch._types.query_dsl.Query;
 import co.elastic.clients.elasticsearch._types.mapping.Property;
 import co.elastic.clients.elasticsearch._types.mapping.TypeMapping;
 import co.elastic.clients.elasticsearch.core.BulkRequest;
@@ -151,6 +155,129 @@ public class ElasticsearchEventIndex implements EventSearchIndex {
     }
 
     @Override
+    public SearchQuery.Results search(SearchQuery.Criteria criteria) {
+        try {
+            var response = client.search(request -> {
+                // The Category filter is a post_filter rather than part of the query, and that
+                // is what makes criterion 17's counts possible at all.
+                //
+                // Aggregations are computed over the documents the *query* matched, so a
+                // category clause in the query leaves the aggregation looking at one category
+                // and counting five zeroes. A post_filter runs after the aggregations and
+                // narrows only the hits - so the page shows one category and the counts beside
+                // it still describe all six, which is the number a visitor is choosing between.
+                request.index(ALIAS)
+                        .size(criteria.limit())
+                        .query(matching(withoutCategory(criteria)))
+                        // Only the id is read back. The document carries a whole card, and
+                        // fetching it would mean two sources for the same card - see SearchQuery.
+                        .source(source -> source.fetch(false))
+                        .trackTotalHits(track -> track.enabled(false))
+                        .aggregations("categories", aggregation -> aggregation
+                                .terms(terms -> terms.field("categorySlug").size(50)));
+
+                if (criteria.categorySlug() != null) {
+                    request.postFilter(filter -> filter.term(term -> term
+                            .field("categorySlug").value(criteria.categorySlug())));
+                }
+
+                if (criteria.byRelevance()) {
+                    // Score first, then id. The id is the tie-break that makes search_after
+                    // work at all: two Events with the same score and no second key would
+                    // page inconsistently, repeating one and skipping the other.
+                    request.sort(sort -> sort.score(score -> score.order(SortOrder.Desc)))
+                            .sort(sort -> sort.field(field -> field
+                                    .field("id").order(SortOrder.Asc)));
+                } else {
+                    request.sort(sort -> sort.field(field -> field
+                                    .field("startsAt").order(SortOrder.Asc)))
+                            .sort(sort -> sort.field(field -> field
+                                    .field("id").order(SortOrder.Asc)));
+                }
+
+                if (criteria.after() != null) {
+                    request.searchAfter(criteria.after().sortValues().stream()
+                            .map(FieldValue::of).toList());
+                }
+                return request;
+            }, Void.class);
+
+            var hits = response.hits().hits();
+            List<UUID> ids = hits.stream().map(hit -> UUID.fromString(hit.id())).toList();
+
+            // A next cursor only when the page was full. A short page is the last one, and a
+            // cursor on it would be a "load more" that answers nothing.
+            SearchCursor next = hits.size() < criteria.limit() || hits.isEmpty() ? null
+                    : new SearchCursor(hits.get(hits.size() - 1).sort().stream()
+                            .map(ElasticsearchEventIndex::asString).toList());
+
+            List<SearchQuery.CategoryCount> facets = criteria.after() != null ? List.of()
+                    : response.aggregations().get("categories").sterms().buckets().array()
+                            .stream()
+                            .map(bucket -> new SearchQuery.CategoryCount(
+                                    bucket.key().stringValue(), bucket.docCount()))
+                            .toList();
+
+            return new SearchQuery.Results(ids, next, facets);
+        } catch (IOException | ElasticsearchException e) {
+            throw new SearchUnavailableException("The search cluster could not answer", e);
+        }
+    }
+
+    /**
+     * The query: filters that must all hold, and a text match that decides the score.
+     *
+     * <p>The filters are in {@code filter} rather than {@code must}, which is not a style
+     * choice - a filter clause is not scored and is cached, so a city or a date range narrows
+     * the result without moving anything up the ranking. Only the text should decide order.
+     */
+    private static Query matching(SearchQuery.Criteria criteria) {
+        return Query.of(query -> query.bool(bool -> {
+            bool.filter(filter -> filter.range(range -> range.date(date -> date
+                    .field("startsAt").gte(criteria.startsAfter().toString()))));
+            if (criteria.startsBefore() != null) {
+                bool.filter(filter -> filter.range(range -> range.date(date -> date
+                        .field("startsAt").lte(criteria.startsBefore().toString()))));
+            }
+            if (criteria.categorySlug() != null) {
+                bool.filter(filter -> filter.term(term -> term
+                        .field("categorySlug").value(criteria.categorySlug())));
+            }
+            if (criteria.citySlug() != null) {
+                bool.filter(filter -> filter.term(term -> term
+                        .field("citySlug").value(criteria.citySlug())));
+            }
+            if (criteria.q() != null && !criteria.q().isBlank()) {
+                bool.must(must -> must.multiMatch(match -> match
+                        .query(criteria.q())
+                        // requirements/009 criterion 18's four fields. The weights say what a
+                        // match is worth rather than whether it counts: a word in a title is
+                        // the event being about that thing, and the same word in a venue's
+                        // name is where it happens to be held.
+                        .fields("title^3", "venueName^2", "description", "organizationName")));
+            } else {
+                bool.must(must -> must.matchAll(all -> all));
+            }
+            return bool;
+        }));
+    }
+
+    /** The same criteria with the Category dropped - it is applied as a post_filter instead. */
+    private static SearchQuery.Criteria withoutCategory(SearchQuery.Criteria criteria) {
+        return new SearchQuery.Criteria(criteria.q(), null, criteria.citySlug(),
+                criteria.startsAfter(), criteria.startsBefore(), criteria.byRelevance(),
+                criteria.limit(), criteria.after());
+    }
+
+    /** A sort value as the string a cursor carries. */
+    private static String asString(FieldValue value) {
+        return value.isString() ? value.stringValue()
+                : value.isLong() ? Long.toString(value.longValue())
+                : value.isDouble() ? Double.toString(value.doubleValue())
+                : String.valueOf(value._get());
+    }
+
+    @Override
     public boolean isAvailable() {
         try {
             return client.ping().value();
@@ -209,6 +336,11 @@ public class ElasticsearchEventIndex implements EventSearchIndex {
 
     private static TypeMapping mapping() {
         return TypeMapping.of(mapping -> mapping
+                // Sortable, and that is the only reason it is here: `_id` cannot be sorted on
+                // without fielddata, and a search_after needs a tie-break key or two Events
+                // with the same score page inconsistently - one repeated, one skipped. The
+                // symptom was `all shards failed`, which names the shard and not the field.
+                .properties("id", Property.of(property -> property.keyword(keyword -> keyword)))
                 .properties("title", text())
                 // Not a keyword sub-field on every text field, only where one is needed. A
                 // keyword copy of a description is a 5,000-character term nothing will ever
