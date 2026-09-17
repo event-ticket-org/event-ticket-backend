@@ -2,6 +2,7 @@ package com.eventticket.checkout.usecase;
 
 import com.eventticket.checkout.domain.EventCancellation;
 import com.eventticket.checkout.domain.Order;
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.shared.persistence.routing.PrimaryOnly;
 import com.eventticket.checkout.repository.OrderRepository;
 import com.eventticket.event.domain.Event;
@@ -79,10 +80,13 @@ public class CancelEvent {
     private final TransactionTemplate transactions;
     private final TransactionTemplate readOnlyTransactions;
 
+    private final SearchOutbox searchOutbox;
+
     public CancelEvent(EventRepository events, OrderRepository orders, TicketRepository tickets,
                 RefundRepository refunds, RefundOrder refundOrder, Managers managers,
                 AuditTrail audit, EmailSender email, UserDirectory users,
-                PlatformTransactionManager transactionManager) {
+                PlatformTransactionManager transactionManager,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.orders = orders;
         this.tickets = tickets;
@@ -92,6 +96,7 @@ public class CancelEvent {
         this.audit = audit;
         this.email = email;
         this.users = users;
+        this.searchOutbox = searchOutbox;
         this.transactions = new TransactionTemplate(transactionManager);
         this.readOnlyTransactions = new TransactionTemplate(transactionManager);
         this.readOnlyTransactions.setReadOnly(true);
@@ -135,6 +140,10 @@ public class CancelEvent {
         tickets.saveAll(issued);
 
         audit.record(organizationId, AuditTrail.EVENT_CANCELLED, event.title());
+        // The index is derived from this Event, so it is told the Event changed rather
+        // than told what it changed to - see SearchOutbox.
+        searchOutbox.changed(eventId);
+
         log.info("Cancelled eventId={} and voided {} ticket(s)", eventId, issued.size());
         return event;
     }

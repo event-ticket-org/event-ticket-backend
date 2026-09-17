@@ -506,6 +506,43 @@ unaccented only the column, so typing a title exactly as written found nothing.
 the deployed application needs no superuser (verified against a `NOSUPERUSER` role, because the
 connection user is a superuser in development and test and would have proved nothing).
 
+## The search index
+
+Elasticsearch holds a copy of the public listing and is never a record of anything. Four things
+about it cost time to find.
+
+**Two Jacksons, and neither is a mistake.** This application serialises with Jackson 3
+(`tools.jackson`, per Boot 4); the Elasticsearch client ships its own mapper on Jackson 2 and
+uses it for request bodies. So an `Instant` in a document goes through a mapper Spring never
+configures, and fails at the first index call with "Java 8 date/time type not supported by
+default" - which reads like a misconfiguration here and is a missing module there.
+`SearchIndexConfiguration` registers `JavaTimeModule` on the client's own mapper.
+
+**`@ConditionalOnProperty` and an empty default do not mix**, and this is the second place that
+has bitten. `app.search.uri` is deliberately *not* written as `${SEARCH_URI:}` in
+`application.yml`: an empty default is a value, the condition treats present-but-empty as
+present, and a deployment with no cluster would switch the indexer on and then fail building a
+client from `""`. The key is absent and `APP_SEARCH_URI` sets it through relaxed binding. The
+test suite has to set it in `application.properties` for the opposite reason - a condition is
+evaluated while configuration is parsed, and a `DynamicPropertyRegistrar` contributes its value
+during refresh, which is later.
+
+**The clock is a bean of its own.** `IndexPendingEvents` does the work; `SearchIndexSchedule`
+decides when. The suite drives the work directly and turns the schedule off, because a drain
+firing every two seconds deadlocked against the `TRUNCATE` that cleans up between tests - the
+drain holds `AccessShareLock` on `event`, the truncate wants `AccessExclusiveLock`, and Postgres
+resolved it by killing one of them. It surfaced in an unrelated payment test, which is how a
+background job announces itself.
+
+**The outbox carries an id and nothing else**, and that is what makes the consumer convergent:
+every message means "re-read this Event", so duplicates land the same document and an
+out-of-order retry still ends on the current state. There is no dedupe table because indexing by
+document id is already an upsert. `SearchOutbox.changed` is called explicitly from eight use
+cases rather than inferred from a JPA listener - a listener would catch every change to `Event`
+and none to `PricingTier`, so the cheapest price would silently stop updating while everything
+else kept working. Forgetting a call site costs staleness until the nightly rebuild, which is
+the reconciler that makes the whole arrangement recoverable rather than permanently wrong.
+
 **An unauthenticated read of tenant-scoped rows needs a `SECURITY DEFINER` function, not a
 wider policy.** The ranked row ranks by Tickets sold, which means reading `ticket_order` and
 `order_seat` - both tenant-scoped, and a visitor on the home page is neither the Organization's

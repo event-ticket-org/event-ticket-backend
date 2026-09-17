@@ -7,6 +7,7 @@ import com.eventticket.event.domain.PricingTier;
 import com.eventticket.event.repository.EventCategoryRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.tenancy.TenantContext;
 import com.eventticket.venue.domain.SeatMapDocument;
@@ -38,13 +39,17 @@ public class CreateEvent {
     private final EventCategoryRepository categories;
     private final Managers managers;
 
+    private final SearchOutbox searchOutbox;
+
     public CreateEvent(EventRepository events, PricingTierRepository tiers,
-                VenueRepository venues, EventCategoryRepository categories, Managers managers) {
+                VenueRepository venues, EventCategoryRepository categories, Managers managers,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.tiers = tiers;
         this.venues = venues;
         this.categories = categories;
         this.managers = managers;
+        this.searchOutbox = searchOutbox;
     }
 
     @Transactional
@@ -67,6 +72,10 @@ public class CreateEvent {
         List<PricingTier> created = tiers.saveAll(map.tierNames().stream()
                 .map(name -> new PricingTier(organizationId, event.id(), name))
                 .toList());
+
+        // The index is derived from this Event, so it is told the Event changed rather
+        // than told what it changed to - see SearchOutbox.
+        searchOutbox.changed(event.id());
 
         log.info("Created event eventId={} venueId={} tiers={}", event.id(), venueId, created.size());
         return EventDetail.of(event, EventPricing.of(map.tierNames(), created));

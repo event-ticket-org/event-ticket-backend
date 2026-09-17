@@ -9,6 +9,7 @@ import com.eventticket.event.repository.EventCategoryRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.repository.EventSeatRepository;
 import com.eventticket.event.repository.PricingTierRepository;
+import com.eventticket.event.search.outbox.SearchOutbox;
 import com.eventticket.organization.domain.Managers;
 import com.eventticket.shared.audit.AuditTrail;
 import com.eventticket.shared.error.ApiException;
@@ -48,9 +49,12 @@ public class UpdateEvent {
     private final Managers managers;
     private final AuditTrail audit;
 
+    private final SearchOutbox searchOutbox;
+
     public UpdateEvent(EventRepository events, EventSeatRepository seats, PricingTierRepository tiers,
                 VenueRepository venues, EventCategoryRepository categories, Managers managers,
-                AuditTrail audit) {
+                AuditTrail audit,
+                    SearchOutbox searchOutbox) {
         this.events = events;
         this.seats = seats;
         this.tiers = tiers;
@@ -58,6 +62,7 @@ public class UpdateEvent {
         this.categories = categories;
         this.managers = managers;
         this.audit = audit;
+        this.searchOutbox = searchOutbox;
     }
 
     @Transactional
@@ -97,6 +102,10 @@ public class UpdateEvent {
         if (changes.touchesSeats()) {
             withholdFromSale(event, changes.unsellableSeatIds());
         }
+
+        // The index is derived from this Event, so it is told the Event changed rather
+        // than told what it changed to - see SearchOutbox.
+        searchOutbox.changed(eventId);
 
         events.save(event);
 

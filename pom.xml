@@ -168,6 +168,41 @@
 			<artifactId>testcontainers-postgresql</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!--
+		 Elasticsearch, and the client that is not Spring Data.
+
+		 Spring Data Elasticsearch would give repository-style methods and hide the query DSL,
+		 which is the opposite of what is wanted here: the queries are the interesting part, and
+		 a derived method name cannot express a function_score or a terms aggregation without
+		 dropping to the same builders anyway. It also matches how this codebase already reads -
+		 explicit JPQL and native SQL rather than derived query methods.
+
+		 The version is managed by Spring Boot's dependency management, so it moves with the
+		 platform rather than with a number somebody typed here.
+		-->
+		<dependency>
+			<groupId>co.elastic.clients</groupId>
+			<artifactId>elasticsearch-java</artifactId>
+		</dependency>
+		<!--
+		 Jackson 2's date module, for Jackson 2, in a project that uses Jackson 3.
+
+		 Both are on the classpath and neither is a mistake. This application serialises with
+		 Jackson 3 (`tools.jackson`, per Boot 4); the Elasticsearch client ships its own mapper
+		 on Jackson 2 and uses it for request bodies, so an `Instant` in a document is serialised
+		 by a mapper this project never configures. Without this it fails at the first indexing
+		 call with "Java 8 date/time type not supported by default", which reads like a
+		 misconfiguration of ours and is a missing module of theirs.
+		-->
+		<dependency>
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jsr310</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>testcontainers-elasticsearch</artifactId>
+			<scope>test</scope>
+		</dependency>
 	</dependencies>
 
 	<dependencyManagement>
