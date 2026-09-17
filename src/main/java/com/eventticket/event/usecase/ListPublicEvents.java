@@ -6,6 +6,10 @@ import com.eventticket.event.domain.PublicListing;
 import com.eventticket.event.repository.EventCategoryRepository;
 import com.eventticket.event.repository.EventRepository;
 import com.eventticket.event.support.PageCursor;
+import com.eventticket.event.search.EventSearchIndex;
+import com.eventticket.event.search.SearchCursor;
+import com.eventticket.event.search.SearchQuery;
+import com.eventticket.event.search.SearchUnavailableException;
 import com.eventticket.event.support.PublicEventViews;
 import com.eventticket.organization.domain.Organization;
 import com.eventticket.shared.error.ApiException;
@@ -14,8 +18,11 @@ import com.eventticket.shared.page.Paged;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class ListPublicEvents {
 
+    private static final Logger log = LoggerFactory.getLogger(ListPublicEvents.class);
+
     /** Matches every row, which is what "this filter was not used" has to mean in one query shape. */
     private static final String ANY = "%";
 
@@ -43,41 +52,136 @@ public class ListPublicEvents {
     private final EventCategoryRepository categories;
     private final PublicEventViews views;
 
+    /**
+     * Absent when nothing is configured, which is a deployment without a search cluster rather
+     * than a broken one. The listing serves from Postgres and says nothing about it.
+     */
+    private final Optional<EventSearchIndex> index;
+
     public ListPublicEvents(EventRepository events, EventCategoryRepository categories,
-                     PublicEventViews views) {
+                     PublicEventViews views, Optional<EventSearchIndex> index) {
         this.events = events;
         this.categories = categories;
         this.views = views;
+        this.index = index;
     }
 
     /**
-     * @param relevanceOrdered criterion 5's second ordering. Refused while nothing can compute
-     *                         it, because a client that asked for relevance and quietly got
-     *                         chronological has no way to tell.
+     * @param relevanceOrdered criterion 5's second ordering. Needs the index: Postgres has no
+     *                         score to sort by, and a LIKE has no notion of how well it matched.
      */
     @Transactional(readOnly = true)
     public PublicListing list(String query, boolean relevanceOrdered, String categorySlug,
                               String citySlug, Instant startsAfter, Instant startsBefore,
                               int limit, String cursor) {
-        requireSupported(relevanceOrdered, query);
+        requireRelevanceHasSomethingToRankBy(relevanceOrdered, query);
+
+        Instant now = Instant.now();
+        // Never earlier than now, whatever was asked for: the listing does not show what has
+        // already begun, and that is the listing's rule rather than the index's or the query's.
+        Instant after = startsAfter == null || startsAfter.isBefore(now) ? now : startsAfter;
+
+        if (index.isPresent()) {
+            try {
+                return fromIndex(index.get(), query, relevanceOrdered, categorySlug, citySlug,
+                        after, startsBefore, limit, cursor, now);
+            } catch (SearchUnavailableException e) {
+                // criterion 20: losing the index degrades the listing and never takes it down.
+                // Logged at WARN with the reason, because a listing quietly serving from the
+                // slower path for a week is the kind of thing nobody notices until a bill.
+                // The cause, not just this exception's own message. A fallback that says only
+                // "the cluster could not answer" is a fallback nobody can debug: the reason is
+                // always in what it wrapped, and without it a mapping mistake and a dead
+                // cluster produce the same line.
+                log.warn("Search unavailable, serving the listing from Postgres: {}",
+                        e.getCause() == null ? e.getMessage() : e.getCause().toString(), e);
+            }
+        }
+        return fromPostgres(query, relevanceOrdered, categorySlug, citySlug, after, startsBefore,
+                limit, cursor, now);
+    }
+
+    /**
+     * The index decides which Events and in what order; Postgres supplies the cards.
+     *
+     * <p>Two reads, and the second one is by primary key for at most a page of ids. That is the
+     * whole cost of having one way to build a card rather than two - see {@code SearchQuery}.
+     */
+    private PublicListing fromIndex(EventSearchIndex searchIndex, String query,
+                                    boolean relevanceOrdered, String categorySlug,
+                                    String citySlug, Instant after, Instant before, int limit,
+                                    String cursor, Instant now) {
+        var results = searchIndex.search(new SearchQuery.Criteria(
+                blankToNull(query), blankToNull(categorySlug), blankToNull(citySlug),
+                after, before, relevanceOrdered, limit, SearchCursor.decode(cursor)));
+
+        // Read back through the listing's own predicate rather than trusting the index. The
+        // index is derived and can be a moment behind - an Event cancelled since the last drain
+        // is still a document - and a listing that showed one would be a link to a page saying
+        // the show is off. The index decides the order; Postgres decides what is true.
+        Map<UUID, Event> listable = events
+                .findPublicByIds(results.ids(), now, Event.Status.PUBLISHED,
+                        Organization.Status.APPROVED)
+                .stream().collect(Collectors.toMap(Event::id, event -> event));
+        List<Event> ordered = results.ids().stream()
+                .map(listable::get).filter(java.util.Objects::nonNull).toList();
+
+        return new PublicListing(
+                new Paged<>(views.of(ordered, now),
+                        results.next() == null ? null : results.next().encode()),
+                namesFor(results.facets()));
+    }
+
+    /** Category counts from the index, with the names the index does not carry. */
+    private List<PublicListing.CategoryCount> namesFor(List<SearchQuery.CategoryCount> counted) {
+        if (counted.isEmpty()) {
+            return List.of();
+        }
+        Map<String, Long> bySlug = counted.stream().collect(
+                Collectors.toMap(SearchQuery.CategoryCount::slug,
+                        SearchQuery.CategoryCount::count));
+        // Every Category, including the ones the index had no bucket for. criterion 17 wants
+        // the zeroes: a chip greyed with a zero says the other filters emptied it, where one
+        // missing says the category does not exist.
+        return categories.findAllByOrderByPositionAsc().stream()
+                .map(category -> new PublicListing.CategoryCount(category.slug(), category.name(),
+                        bySlug.getOrDefault(category.slug(), 0L)))
+                .toList();
+    }
+
+    /**
+     * The path that works without a search cluster, and the one the benchmark compares against.
+     *
+     * <p>It cannot rank. requirements/009 criterion 5 says a client asks for an ordering rather
+     * than inferring which it got, so a request for relevance is refused here rather than
+     * answered chronologically - silently downgrading would satisfy the request and lose the
+     * information that it was not honoured. Everything else degrades quietly, which is the
+     * right trade in the other direction: a visitor filtering by city does not need to know
+     * which system answered.
+     */
+    private PublicListing fromPostgres(String query, boolean relevanceOrdered,
+                                       String categorySlug, String citySlug, Instant after,
+                                       Instant before, int limit, String cursor, Instant now) {
+        if (relevanceOrdered) {
+            throw new ApiException(ErrorCodes.VALIDATION_FAILED,
+                    "Sorting by relevance is not available right now. Ask for start time, or "
+                            + "try again in a moment.",
+                    Map.of("field", "sort"));
+        }
 
         PageCursor from = PageCursor.decode(cursor, PageCursor.FIRST_ASCENDING);
         PageRequest page = PageRequest.ofSize(limit + 1);
-        Instant now = Instant.now();
-        Instant after = PageCursor.orBeginning(startsAfter);
-        Instant before = PageCursor.orEndOfTime(startsBefore);
+        Instant before_ = PageCursor.orEndOfTime(before);
         String pattern = searchPattern(query);
         String category = orAny(categorySlug);
         String city = orAny(citySlug);
 
         List<Event> found = events.findPublicPage(now, Event.Status.PUBLISHED,
-                Organization.Status.APPROVED, after, before, category, city, pattern,
+                Organization.Status.APPROVED, after, before_, category, city, pattern,
                 from.at(), from.id(), page);
 
-        // Only the first page carries facets. They are the same for every page of a listing,
-        // and a cursor that recomputed them would pay for six counts nobody reads again.
         List<PublicListing.CategoryCount> facets = cursor == null
-                ? facets(now, after, before, city, pattern)
+                ? facets(now, after, before_, city, pattern)
                 : List.of();
 
         boolean more = found.size() > limit;
@@ -86,36 +190,30 @@ public class ListPublicEvents {
             return new PublicListing(Paged.lastPage(List.of()), facets);
         }
 
-        List<PublicEventView> items = views.of(visible, now);
-
         Event last = visible.get(visible.size() - 1);
         return new PublicListing(
-                new Paged<>(items, more ? PageCursor.encode(last.startsAt(), last.id()) : null),
+                new Paged<>(views.of(visible, now),
+                        more ? PageCursor.encode(last.startsAt(), last.id()) : null),
                 facets);
     }
 
     /**
-     * Criterion 5's two orderings, one of which nothing here can compute yet.
-     *
-     * <p>Refusing is the honest answer while that is true. Relevance needs a score, and this
-     * query has none: ordering by how well a title matched would mean ranking in SQL over a
-     * LIKE that has no notion of "how well". Answering chronologically to a client that asked
-     * for relevance would satisfy the request and lose the information that it was not honoured
-     * - which is exactly what criterion 5 asks a client not to have to infer.
+     * Criterion 5, and the half of it that holds whichever system answers: relevance to nothing
+     * is not an ordering. Checked before either path, because it is a property of the request
+     * rather than of what is available to serve it.
      */
-    private static void requireSupported(boolean relevanceOrdered, String query) {
-        if (!relevanceOrdered) {
-            return;
-        }
-        if (query == null || query.isBlank()) {
+    private static void requireRelevanceHasSomethingToRankBy(boolean relevanceOrdered,
+                                                             String query) {
+        if (relevanceOrdered && (query == null || query.isBlank())) {
             throw new ApiException(ErrorCodes.VALIDATION_FAILED,
                     "Sorting by relevance needs something to be relevant to. Send a search term, "
                             + "or leave the ordering to start time.",
                     Map.of("field", "sort"));
         }
-        throw new ApiException(ErrorCodes.VALIDATION_FAILED,
-                "Sorting by relevance is not available yet. Results are ordered by start time.",
-                Map.of("field", "sort"));
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     /**

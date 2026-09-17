@@ -47,6 +47,15 @@ public interface EventSearchIndex {
      */
     public void replaceAll(List<EventDocument> documents);
 
+    /**
+     * Which Events match, in the order asked for, with the facet counts beside them.
+     *
+     * <p>Answers ids rather than documents: the index decides which Events and in what order,
+     * and Postgres supplies what a card is drawn from. See {@link SearchQuery} for why that is
+     * a change of mind.
+     */
+    public SearchQuery.Results search(SearchQuery.Criteria criteria);
+
     /** Whether the cluster answered. Used to decide whether to fall back, never to decide to write. */
     public boolean isAvailable();
 }
