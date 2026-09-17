@@ -65,16 +65,17 @@ public class ElasticsearchEventIndex implements EventSearchIndex {
     }
 
     @Override
-    public void ensureReady() {
+    public boolean ensureReady() {
         try {
             if (client.indices().existsAlias(exists -> exists.name(ALIAS)).value()) {
-                return;
+                return false;
             }
             String index = newIndexName();
             create(index);
             client.indices().updateAliases(update -> update
                     .actions(Action.of(action -> action.add(add -> add.index(index).alias(ALIAS)))));
             log.info("Created search index index={} alias={}", index, ALIAS);
+            return true;
         } catch (IOException e) {
             throw new SearchUnavailableException("Could not prepare the search index", e);
         }

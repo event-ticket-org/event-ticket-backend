@@ -145,7 +145,59 @@ class SearchIndexingTest extends ApiTest {
         assertThat(documentFor(event.getId())).isNotNull();
     }
 
+    /**
+     * The failure this test exists for, reproduced exactly.
+     *
+     * <p>A deployment whose Events all predate the outbox: they are published, nothing has
+     * touched them since, so the queue is empty and the drain returns before it ever reaches
+     * {@code ensureReady}. Every part behaves as written and there is no index at all - which
+     * is what the first real deployment of this feature looked like: ten published events and
+     * an empty cluster.
+     *
+     * <p>So the assertion is made from that state rather than from a convenient one - index
+     * gone, queue empty, and only then the thing that runs at boot.
+     */
+    @Test
+    @DisplayName("a deployment with events but an empty outbox builds an index at startup")
+    void startupBuildsTheFirstIndex() throws IOException {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager);
+        Event event = publish(manager, venue, "Predates The Outbox", NEXT_MONTH);
+
+        // The state a first deployment is in: the Event exists and nothing is queued about it.
+        indexPendingEvents.drain();
+        var behind = elasticsearch.indices()
+                .getAlias(alias -> alias.name(ElasticsearchEventIndex.ALIAS)).aliases().keySet();
+        elasticsearch.indices().delete(delete -> delete.index(List.copyOf(behind)));
+        jdbc.update("delete from search_outbox");
+
+        rebuildSearchIndex.buildOnFirstStart();
+
+        assertThat(documentFor(event.getId())).isNotNull();
+    }
+
+    /** ...and an ordinary restart, with an index already there, leaves it alone. */
+    @Test
+    @DisplayName("a restart with an index already present does not rebuild it")
+    void startupLeavesAnExistingIndexAlone() throws IOException {
+        TokenPair manager = approvedManager();
+        Venue venue = venueWithSeats(manager);
+        publish(manager, venue, "Already Indexed", NEXT_MONTH);
+        indexPendingEvents.drain();
+
+        var before = elasticsearch.indices()
+                .getAlias(alias -> alias.name(ElasticsearchEventIndex.ALIAS)).aliases().keySet();
+
+        rebuildSearchIndex.buildOnFirstStart();
+
+        // The same concrete index behind the alias: a rebuild would have replaced it.
+        var after = elasticsearch.indices()
+                .getAlias(alias -> alias.name(ElasticsearchEventIndex.ALIAS)).aliases().keySet();
+        assertThat(after).isEqualTo(before);
+    }
+
     // ---- helpers ----
+
 
     private java.util.Map<String, Object> documentFor(UUID eventId) {
         try {

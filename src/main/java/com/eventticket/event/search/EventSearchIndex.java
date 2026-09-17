@@ -24,8 +24,13 @@ import java.util.UUID;
  */
 public interface EventSearchIndex {
 
-    /** Creates the index and its alias if they are not there. Safe to call repeatedly. */
-    public void ensureReady();
+    /**
+     * Creates the index and its alias if they are not there. Safe to call repeatedly.
+     *
+     * @return true when there was nothing and one was created, which is the caller's signal
+     *         that the index has no documents in it and somebody should put some there.
+     */
+    public boolean ensureReady();
 
     /** Upserts by document id, so replaying the same document is free. */
     public void index(Collection<EventDocument> documents);
