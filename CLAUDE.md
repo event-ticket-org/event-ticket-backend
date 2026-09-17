@@ -511,6 +511,20 @@ connection user is a superuser in development and test and would have proved not
 Elasticsearch holds a copy of the public listing and is never a record of anything. Four things
 about it cost time to find.
 
+**The cluster is shared, so the app owns a prefix and nothing else.** Elasticsearch has no
+schemas and no databases - there is nothing between a cluster and an index - so the only
+separation two systems get is a naming convention neither breaks. An ELK stack claims
+`logs-*`, `metrics-*` and `traces-*`; Kibana claims `.kibana*`; this application claims
+`eventticket-*`. The alias was `events` for one commit, which is exactly the kind of name that
+is obviously fine until something else wants it.
+
+Authentication is on, over plain HTTP, and both halves of that are deliberate: the cluster is
+reachable only on the compose network and loopback, so TLS between containers on one host buys
+nothing, while basic auth is what will keep a Kibana, a beat and this application in separate
+roles on one cluster. The test container runs the same way - security on, TLS off - because a
+test cluster that accepted anything would pass whether or not the client ever sent a
+credential, which is the same shape as a store that accepts every write.
+
 **Two Jacksons, and neither is a mistake.** This application serialises with Jackson 3
 (`tools.jackson`, per Boot 4); the Elasticsearch client ships its own mapper on Jackson 2 and
 uses it for request bodies. So an `Instant` in a document goes through a mapper Spring never

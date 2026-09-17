@@ -98,6 +98,13 @@ app:
     # cluster would switch the indexer on and then fail building a client from "". The key is
     # absent here and set by APP_SEARCH_URI in the environment, which relaxed binding maps onto
     # it. Same trap the replica datasource url documents.
+    # No defaults, like every other credential here (see "No credential has a default"). If a
+    # cluster is configured then it authenticates: an application started without these refuses
+    # to boot, rather than booting and discovering it cannot index anything at the first
+    # publish. They are only read when app.search.uri is set, so a deployment with no cluster
+    # needs neither.
+    username: ${APP_SEARCH_USERNAME}
+    password: ${APP_SEARCH_PASSWORD}
     # The clock, which the suite turns off. The work is driven directly there.
     scheduled: true
     # Frequent, because the delay is visible: somebody publishes an event and then searches for

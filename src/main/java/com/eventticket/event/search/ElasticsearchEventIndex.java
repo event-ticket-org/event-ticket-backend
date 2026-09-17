@@ -28,8 +28,19 @@ public class ElasticsearchEventIndex implements EventSearchIndex {
 
     private static final Logger log = LoggerFactory.getLogger(ElasticsearchEventIndex.class);
 
-    /** What everything reads and writes. Never an index name. */
-    public static final String ALIAS = "events";
+    /**
+     * What everything reads and writes. Never an index name.
+     *
+     * <p><strong>Prefixed, because this cluster will not only be ours.</strong> Elasticsearch
+     * has no schemas and no databases - there is nothing between a cluster and an index - so
+     * the only way two systems share one is a naming convention neither of them breaks. An ELK
+     * stack claims {@code logs-*}, {@code metrics-*} and {@code traces-*}; Kibana claims
+     * {@code .kibana*}; this application claims {@code eventticket-*} and touches nothing else.
+     *
+     * <p>It was {@code events} for one commit, which is exactly the kind of name that is
+     * obviously fine until something else wants it.
+     */
+    public static final String ALIAS = "eventticket-events";
 
     /**
      * The analyzer, and the reason it is the boring one.
