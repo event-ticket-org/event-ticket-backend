@@ -13,6 +13,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -63,6 +65,37 @@ public class RebuildSearchIndex {
      */
     public void nightly() {
         rebuild();
+    }
+
+    /**
+     * Builds the index on boot when there is not one, and does nothing when there is.
+     *
+     * <p>Without this, a deployment whose Events all predate the outbox has an empty index
+     * until the first edit or until 03:20 - whichever comes first. That is exactly what
+     * happened on the first deployment of this feature: ten published Events, an empty outbox
+     * because none of them had been touched since it existed, a drain that returned early, and
+     * no index at all. Every part behaved as written; the gap was that nothing was responsible
+     * for the first one.
+     *
+     * <p>Only when the alias is missing, so an ordinary restart costs one HEAD request. That
+     * also covers the case the volume is disposable *because* of - losing the data directory is
+     * now a restart rather than a day of degraded search.
+     *
+     * <p>After the context is ready rather than during startup, so a slow rebuild delays
+     * nothing that a health check is waiting on, and failures are swallowed: a search cluster
+     * that is not up yet must not stop an application whose listing works without it.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void buildOnFirstStart() {
+        try {
+            if (index.ensureReady()) {
+                log.info("No search index found at startup - building one from Postgres");
+                rebuild();
+            }
+        } catch (RuntimeException e) {
+            log.warn("Could not build the search index at startup, leaving it to the nightly "
+                    + "rebuild: {}", e.toString());
+        }
     }
 
     /** Also callable directly, which is what a mapping change and a first deployment need. */
