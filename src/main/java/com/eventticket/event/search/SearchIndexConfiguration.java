@@ -28,11 +28,35 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnProperty(name = "app.search.uri")
 public class SearchIndexConfiguration {
 
+    /**
+     * @param username and {@code password}: no defaults, like every other credential here. If
+     *                 a cluster is configured then it authenticates, and an application started
+     *                 without the credentials refuses to boot rather than discovering it cannot
+     *                 index anything at the first publish.
+     */
     @Bean
-    public ElasticsearchClient elasticsearchClient(@Value("${app.search.uri}") String uri) {
+    public ElasticsearchClient elasticsearchClient(
+            @Value("${app.search.uri}") String uri,
+            @Value("${app.search.username}") String username,
+            @Value("${app.search.password}") String password) {
         URI parsed = URI.create(uri);
+
+        // Basic auth over plain HTTP, deliberately. The cluster is reachable only on the
+        // compose network and on loopback, so the traffic never leaves the host - and
+        // xpack.security.enabled with http.ssl disabled is a supported combination, not a
+        // half-configured one. Authentication is what keeps a future Kibana, a beat and this
+        // application in separate roles on one cluster; TLS between containers on the same
+        // machine is the part that would buy nothing here.
+        var credentials = new org.apache.hc.client5.http.impl.auth.BasicCredentialsProvider();
+        credentials.setCredentials(
+                new org.apache.hc.client5.http.auth.AuthScope(parsed.getHost(), parsed.getPort()),
+                new org.apache.hc.client5.http.auth.UsernamePasswordCredentials(
+                        username, password.toCharArray()));
+
         var rest = co.elastic.clients.transport.rest5_client.low_level.Rest5Client
                 .builder(new HttpHost(parsed.getScheme(), parsed.getHost(), parsed.getPort()))
+                .setHttpClientConfigCallback(builder ->
+                        builder.setDefaultCredentialsProvider(credentials))
                 .build();
         return new ElasticsearchClient(new Rest5ClientTransport(rest, jsonMapper()));
     }

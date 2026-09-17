@@ -69,12 +69,23 @@ public class TestcontainersConfiguration {
 	 * A small heap for the same reason - the default sizes itself from the host's RAM, which on
 	 * a CI runner is most of the runner.
 	 */
+	static final String SEARCH_PASSWORD = "eventticket";
+
 	@Bean
 	public ElasticsearchContainer searchContainer() {
 		return new ElasticsearchContainer(
 				DockerImageName.parse("docker.elastic.co/elasticsearch/elasticsearch:9.4.5"))
 				.withEnv("discovery.type", "single-node")
-				.withEnv("xpack.security.enabled", "false")
+				// Security on, exactly as the deployment runs it, so the authenticated path is
+				// the one the suite exercises. A test cluster that accepted anything would pass
+				// whether or not the client ever sent a credential - the same shape as a store
+				// that accepts every write, which this file already refuses to be.
+				.withEnv("xpack.security.enabled", "true")
+				// ...and TLS off, also as the deployment runs it: the cluster is reachable on
+				// the compose network and loopback only, so authentication is what separates
+				// callers and transport encryption between containers on one host buys nothing.
+				.withEnv("xpack.security.http.ssl.enabled", "false")
+				.withEnv("ELASTIC_PASSWORD", SEARCH_PASSWORD)
 				.withEnv("ES_JAVA_OPTS", "-Xms512m -Xmx512m");
 	}
 
@@ -84,8 +95,12 @@ public class TestcontainersConfiguration {
 	 */
 	@Bean
 	public DynamicPropertyRegistrar searchProperties(ElasticsearchContainer search) {
-		return registry -> registry.add("app.search.uri",
-				() -> "http://" + search.getHttpHostAddress().replaceFirst("^https?://", ""));
+		return registry -> {
+			registry.add("app.search.uri",
+					() -> "http://" + search.getHttpHostAddress().replaceFirst("^https?://", ""));
+			registry.add("app.search.username", () -> "elastic");
+			registry.add("app.search.password", () -> SEARCH_PASSWORD);
+		};
 	}
 
 	/**
